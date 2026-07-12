@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 from typing import Any
 
 import requests
@@ -12,7 +13,7 @@ class ArbeitsagenturClient:
 
     BASE_URL = "https://rest.arbeitsagentur.de/jobboerse/jobsuche-service"
     JOBS_URL = f"{BASE_URL}/pc/v6/jobs"
-    JOB_DETAILS_URL = f"{BASE_URL}​/pc​/v4​/jobdetails/​"
+    JOB_DETAILS_URL = f"{BASE_URL}/pc/v4/jobdetails"
 
     API_KEY = "jobboerse-jobsuche"
 
@@ -45,6 +46,7 @@ class ArbeitsagenturClient:
 
         if page_number < 1:
             raise ValueError("page_number must be at least 1")
+
         if not 1 <= jobs_per_page <= 100:
             raise ValueError("jobs_per_page must be between 1 and 100")
 
@@ -60,6 +62,29 @@ class ArbeitsagenturClient:
         response = self.session.get(
             self.JOBS_URL,
             params=params,
+            timeout=self.timeout_seconds,
+        )
+        response.raise_for_status()
+
+        data = response.json()
+
+        if not isinstance(data, dict):
+            raise ValueError("Expected the API response to be a JSON object")
+
+        return data
+
+    def get_job_details(self, reference_number: str) -> dict[str, Any]:
+        """Retrieve the full details for one job advertisement."""
+
+        if not reference_number:
+            raise ValueError("reference_number must not be empty")
+
+        encoded_reference_number = base64.b64encode(
+            reference_number.encode("utf-8")
+        ).decode("ascii")
+
+        response = self.session.get(
+            f"{self.JOB_DETAILS_URL}/{encoded_reference_number}",
             timeout=self.timeout_seconds,
         )
         response.raise_for_status()

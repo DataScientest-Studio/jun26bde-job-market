@@ -12,8 +12,8 @@ from src.data.arbeitsagentur_client import ArbeitsagenturClient
 RAW_DATA_DIRECTORY = Path(__file__).resolve().parent / "raw" / "arbeitsagentur"
 
 
-def save_json(data: dict[str, Any], target_path: Path) -> None:
-    """Write a dictionary as UTF-8 JSON."""
+def save_json(data: Any, target_path: Path) -> None:
+    """Write JSON-compatible data as UTF-8 JSON."""
 
     target_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -49,10 +49,44 @@ def main() -> None:
         "%Y-%m-%dT%H-%M-%SZ"
     )
 
-    output_path = output_directory / "search-page-1.json"
-    save_json(search_result, output_path)
+    search_output_path = output_directory / "search-page-1.json"
+    save_json(search_result, search_output_path)
 
-    print(f"Raw response saved to: {output_path}")
+    print(f"Raw search response saved to: {search_output_path}")
+
+    jobs = search_result.get("ergebnisliste")
+    if not isinstance(jobs, list):
+        raise ValueError(
+            "Expected search_result['ergebnisliste'] to be a list"
+        )
+
+    job_details: list[dict[str, Any]] = []
+
+    for job_number, job in enumerate(jobs, start=1):
+        if not isinstance(job, dict):
+            raise ValueError("Expected every job to be a JSON object")
+
+        reference_number = job.get("referenznummer")
+
+        if not isinstance(reference_number, str) or not reference_number:
+            print(
+                f"Skipping job {job_number}: "
+                "missing or invalid referenznummer"
+            )
+            continue
+
+        print(
+            f"Retrieving details for job {job_number}/{len(jobs)}: "
+            f"{reference_number}"
+        )
+
+        details = arbeitsagentur_client.get_job_details(reference_number)
+        job_details.append(details)
+
+    details_output_path = output_directory / "job-details.json"
+    save_json(job_details, details_output_path)
+
+    print(f"Raw job details saved to: {details_output_path}")
 
 
 if __name__ == "__main__":
