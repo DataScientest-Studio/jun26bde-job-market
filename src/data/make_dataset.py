@@ -6,6 +6,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+import requests
 
 from src.data.arbeitsagentur_client import ArbeitsagenturClient
 
@@ -30,63 +31,97 @@ def main() -> None:
     arbeitsagentur_client = ArbeitsagenturClient()
 
     keyword = "Data Engineer"
-    page_number = 1
+    first_page = 1
+    number_of_pages = 3
     jobs_per_page = 10
-
-    print(
-        f"Searching for {keyword!r}, "  # !r uses repr() instead of str() for a developer-friendly representation
-        f"page {page_number}, jobs per page {jobs_per_page}..."
-    )
-
-    search_result = arbeitsagentur_client.search_jobs(
-        keyword=keyword,
-        page_number=page_number,
-        jobs_per_page=jobs_per_page,
-    )
 
     extraction_time = datetime.now(timezone.utc)
     output_directory = RAW_DATA_DIRECTORY / extraction_time.strftime(
         "%Y-%m-%dT%H-%M-%SZ"
     )
 
-    search_output_path = output_directory / "search-page-1.json"
-    save_json(search_result, search_output_path)
+    all_jobs: list[dict[str, Any]] = []
 
-    print(f"Raw search response saved to: {search_output_path}")
-
-    jobs = search_result.get("ergebnisliste")
-    if not isinstance(jobs, list):
-        raise ValueError(
-            "Expected search_result['ergebnisliste'] to be a list"
+    for page_number in range(
+        first_page,
+        first_page + number_of_pages,
+    ):
+        print(
+            f"Searching for {keyword!r}, "
+            f"page {page_number}, "
+            f"jobs per page {jobs_per_page}..."
         )
 
+        try:
+            search_result = arbeitsagentur_client.search_jobs(
+                keyword=keyword,
+                page_number=page_number,
+                jobs_per_page=jobs_per_page,
+            )
+        except requests.RequestException as error:
+            print(f"Failed to retrieve search page " f"{page_number}: {error}")
+            continue
+
+        search_output_path = output_directory / f"search-page-{page_number}.json"
+        save_json(search_result, search_output_path)
+
+        print(f"Raw search response saved to: {search_output_path}")
+
+        jobs = search_result.get("ergebnisliste")
+
+        if not isinstance(jobs, list):
+            print(f"Skipping page {page_number}: " "'ergebnisliste' is not a list")
+            continue
+
+        all_jobs.extend(jobs)
+
+    print(f"Retrieved {len(all_jobs)} search results in total.")
+
     job_details: list[dict[str, Any]] = []
+    failed_jobs: list[dict[str, str]] = []
 
-    for job_number, job in enumerate(jobs, start=1):
-        if not isinstance(job, dict):
-            raise ValueError("Expected every job to be a JSON object")
-
+    for job_number, job in enumerate(all_jobs, start=1):
         reference_number = job.get("referenznummer")
 
         if not isinstance(reference_number, str) or not reference_number:
-            print(
-                f"Skipping job {job_number}: "
-                "missing or invalid referenznummer"
-            )
+            print(f"Skipping job {job_number}: " "missing or invalid referenznummer")
             continue
 
         print(
-            f"Retrieving details for job {job_number}/{len(jobs)}: "
+            f"Retrieving details for "
+            f"{job_number}/{len(all_jobs)}: "
             f"{reference_number}"
         )
 
-        details = arbeitsagentur_client.get_job_details(reference_number)
+        try:
+            details = arbeitsagentur_client.get_job_details(reference_number)
+        except requests.RequestException as error:
+            print(f"Failed to retrieve {reference_number}: " f"{error}")
+
+            failed_jobs.append(
+                {
+                    "referenznummer": reference_number,
+                    "error": str(error),
+                }
+            )
+            continue
+
         job_details.append(details)
 
     details_output_path = output_directory / "job-details.json"
     save_json(job_details, details_output_path)
 
+    failures_output_path = output_directory / "job-detail-failures.json"
+    save_json(failed_jobs, failures_output_path)
+
+    print(f"Successfully retrieved " f"{len(job_details)}/{len(all_jobs)} job details.")
     print(f"Raw job details saved to: {details_output_path}")
+
+    if failed_jobs:
+        print(
+            f"{len(failed_jobs)} detail requests failed. "
+            f"Failures saved to: {failures_output_path}"
+        )
 
 
 if __name__ == "__main__":
