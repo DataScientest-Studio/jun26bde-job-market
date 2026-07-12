@@ -27,6 +27,71 @@ def save_json(data: Any, target_path: Path) -> None:
         )
 
 
+def clean_job(raw_job: dict[str, Any]) -> dict[str, Any]:
+    """Convert one raw Arbeitsagentur job into our cleaner structure."""
+
+    raw_locations = raw_job.get("stellenlokationen", [])
+    clean_locations: list[dict[str, Any]] = []
+
+    if isinstance(raw_locations, list):
+        for raw_location in raw_locations:
+            if not isinstance(raw_location, dict):
+                continue
+
+            raw_address = raw_location.get("adresse", {})
+
+            if not isinstance(raw_address, dict):
+                raw_address = {}
+
+            clean_locations.append(
+                {
+                    "postal_code": raw_address.get("plz"),
+                    "city": raw_address.get("ort"),
+                    "region": raw_address.get("region"),
+                    "country": raw_address.get("land"),
+                    "latitude": raw_location.get("breite"),
+                    "longitude": raw_location.get("laenge"),
+                }
+            )
+
+    entry_period = raw_job.get("eintrittszeitraum", {})
+    publication_period = raw_job.get("veroeffentlichungszeitraum", {})
+
+    if not isinstance(entry_period, dict):
+        entry_period = {}
+
+    if not isinstance(publication_period, dict):
+        publication_period = {}
+
+    return {
+        "reference_number": raw_job.get("referenznummer"),
+        "title": raw_job.get("stellenangebotsTitel"),
+        "occupation": raw_job.get("hauptberuf"),
+        "company": raw_job.get("firma"),
+        "description": raw_job.get("stellenangebotsBeschreibung"),
+        "offer_type": raw_job.get("stellenangebotsart"),
+        "full_time": raw_job.get("arbeitszeitVollzeit"),
+        "contract_duration": raw_job.get("vertragsdauer"),
+        "career_change_suitable": raw_job.get("quereinstiegGeeignet"),
+        "home_office_possible": raw_job.get("homeofficemoeglich"),
+        "temporary_employment": raw_job.get("istArbeitnehmerUeberlassung"),
+        "private_placement": raw_job.get("istPrivateArbeitsvermittlung"),
+        "salary_period": raw_job.get("verguetungsangabe"),
+        "salary_type": raw_job.get("artDerVerguetung"),
+        "salary_min": raw_job.get("gehaltsspanneVon"),
+        "salary_max": raw_job.get("gehaltsspanneBis"),
+        "entry_date": entry_period.get("von"),
+        "publication_date": publication_period.get("von"),
+        "first_publication_date": raw_job.get("datumErsteVeroeffentlichung"),
+        "modified_at": raw_job.get("aenderungsdatum"),
+        "external_url": raw_job.get("externeURL"),
+        "partner_name": raw_job.get("allianzpartnerName"),
+        "partner_url": raw_job.get("allianzpartnerUrl"),
+        "employer_customer_hash": raw_job.get("arbeitgeberKundennummerHash"),
+        "locations": clean_locations,
+    }
+
+
 def main() -> None:
     arbeitsagentur_client = ArbeitsagenturClient()
 
@@ -114,8 +179,14 @@ def main() -> None:
     failures_output_path = output_directory / "job-detail-failures.json"
     save_json(failed_jobs, failures_output_path)
 
+    clean_jobs = [clean_job(raw_job) for raw_job in job_details]
+
+    clean_output_path = output_directory / "clean-jobs.json"
+    save_json(clean_jobs, clean_output_path)
+
     print(f"Successfully retrieved " f"{len(job_details)}/{len(all_jobs)} job details.")
     print(f"Raw job details saved to: {details_output_path}")
+    print(f"Clean job data saved to: {clean_output_path}")
 
     if failed_jobs:
         print(
