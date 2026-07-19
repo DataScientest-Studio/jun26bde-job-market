@@ -10,6 +10,11 @@ import requests
 
 from src.data.arbeitsagentur_client import ArbeitsagenturClient
 
+from src.data.sqlite_loader import (
+    DEFAULT_DATABASE_PATH,
+    load_clean_jobs_to_sqlite,
+)
+
 RAW_DATA_DIRECTORY = Path(__file__).resolve().parent / "raw" / "arbeitsagentur"
 
 
@@ -184,9 +189,16 @@ def main() -> None:
     clean_output_path = output_directory / "clean-jobs.json"
     save_json(clean_jobs, clean_output_path)
 
-    print(f"Successfully retrieved " f"{len(job_details)}/{len(all_jobs)} job details.")
+    num_loaded_jobs, num_skipped_jobs = load_clean_jobs_to_sqlite(
+        jobs=clean_jobs,
+    )
+
+    print(f"Successfully retrieved {len(job_details)}/{len(all_jobs)} job details.")
     print(f"Raw job details saved to: {details_output_path}")
     print(f"Clean job data saved to: {clean_output_path}")
+    print(f"SQLite database updated: {DEFAULT_DATABASE_PATH}")
+    print(f"# Jobs loaded into SQLite: {num_loaded_jobs}")
+    print(f"# Jobs skipped during database loading: {num_skipped_jobs}")
 
     if failed_jobs:
         print(
