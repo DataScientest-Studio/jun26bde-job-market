@@ -51,3 +51,27 @@ This project is a starting Pack for MLOps projects based on the subject "movie_r
 
 Project is based on the [Cookiecutter Data Science project template](https://drivendata.github.io/cookiecutter-data-science/).
 #cookiecutterdatascience
+
+
+This merge request introduces the first version of the data collection pipeline for the Bundesagentur für Arbeit API.
+
+# How to run
+
+## Setup Python
+
+From the root of the project:
+
+```sh
+py -m venv .venv
+source .venv\bin\activate
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+````
+
+## Run
+
+From the root of the project:
+
+```sh
+python -m src.data.make_dataset
+````
