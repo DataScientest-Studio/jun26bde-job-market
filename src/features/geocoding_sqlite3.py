@@ -58,9 +58,3 @@ with sqlite3.connect(db) as conn:
             """, (lat, lon, row_id))
 
     conn.commit()
-
-
-def main() -> None:
-
-if __name__ == "__main__":
-    main()
