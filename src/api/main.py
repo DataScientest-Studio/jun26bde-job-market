@@ -12,6 +12,7 @@ from fastapi import FastAPI
 
 from src.api.routes.jobs import router as jobs_router
 from src.api.routes.health import router as health_router
+from src.api.routes.statistics import router as statistics_router
 
 api = FastAPI(
     title="Liora Job Market API",
@@ -20,3 +21,4 @@ api = FastAPI(
 
 api.include_router(health_router)
 api.include_router(jobs_router)
+api.include_router(statistics_router)
