@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 from typing import Any
+
 import requests
 
 
@@ -36,7 +37,7 @@ class ArbeitsagenturClient:
     def search_jobs(
         self,
         keyword: str,
-        *,  # location, page_number and jobs_per_page are keyword-only arguments (must be specified with their names on the call)
+        *,
         location: str | None = None,
         page_number: int = 1,
         jobs_per_page: int = 25,
@@ -44,10 +45,10 @@ class ArbeitsagenturClient:
         """Search for job advertisements."""
 
         if page_number < 1:
-            raise ValueError("page_number must be at least 1")
+            raise TypeError("page_number must be at least 1")
 
         if not 1 <= jobs_per_page <= 100:
-            raise ValueError("jobs_per_page must be between 1 and 100")
+            raise TypeError("jobs_per_page must be between 1 and 100")
 
         params: dict[str, str | int] = {
             self.KEYWORD_SEARCH_PARAM: keyword,
@@ -68,7 +69,7 @@ class ArbeitsagenturClient:
         data = response.json()
 
         if not isinstance(data, dict):
-            raise ValueError("Expected the API response to be a JSON object")
+            raise TypeError("Expected the API response to be a JSON object")
 
         return data
 
@@ -76,7 +77,7 @@ class ArbeitsagenturClient:
         """Retrieve the full details for one job advertisement."""
 
         if not reference_number:
-            raise ValueError("reference_number must not be empty")
+            raise TypeError("reference_number must not be empty")
 
         encoded_reference_number = base64.b64encode(
             reference_number.encode("utf-8")
@@ -91,6 +92,6 @@ class ArbeitsagenturClient:
         data = response.json()
 
         if not isinstance(data, dict):
-            raise ValueError("Expected the API response to be a JSON object")
+            raise TypeError("Expected the API response to be a JSON object")
 
         return data

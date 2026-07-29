@@ -2,6 +2,8 @@
 __pycache__/
 *.py[cod]
 
+
+
 # C extensions
 *.so
 
@@ -91,3 +93,4 @@ target/
 
 # Generated data
 /src/data/raw/
+map.html

@@ -64,7 +64,6 @@ CREATE TABLE IF NOT EXISTS job_locations (
 );
 """
 
-
 CREATE_LOCATION_INDEX_SQL = """
 CREATE INDEX IF NOT EXISTS idx_job_locations_reference_number
 ON job_locations (reference_number);
@@ -216,7 +215,9 @@ def parse_arguments() -> argparse.Namespace:
         "--database",
         type=Path,
         default=DEFAULT_DATABASE_PATH,
-        help=("Path to the SQLite database. " f"Default: {DEFAULT_DATABASE_PATH}"),
+        help=(
+            f"Path to the SQLite database. Default: {DEFAULT_DATABASE_PATH}"
+        ),
     )
 
     return parser.parse_args()
@@ -232,13 +233,13 @@ def load_json(source_path: Path) -> list[dict[str, Any]]:
         data = json.load(file)
 
     if not isinstance(data, list):
-        raise ValueError("Expected the JSON file to contain a list of jobs")
+        raise TypeError("Expected the JSON file to contain a list of jobs")
 
     jobs: list[dict[str, Any]] = []
 
     for index, item in enumerate(data, start=1):
         if not isinstance(item, dict):
-            raise ValueError(f"Job {index} is not a JSON object")
+            raise TypeError(f"Job {index} is not a JSON object")
 
         jobs.append(item)
 
@@ -253,8 +254,11 @@ def prepare_job(job: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(reference_number, str) or not reference_number:
         raise ValueError("Job is missing a valid reference_number")
 
-    # Exclude locations because they are stored separately in the job_locations table.
-    prepared_job = {key: value for key, value in job.items() if key != "locations"}
+    # Exclude locations because they are stored separately in the 
+    # job_locations table.
+    prepared_job = {
+        key: value for key, value in job.items() if key != "locations"
+    }
 
     for field in BOOLEAN_FIELDS:
         prepared_job[field] = to_sqlite_boolean(job.get(field))
@@ -286,7 +290,8 @@ def load_jobs(
 
             connection.execute(UPSERT_JOB_SQL, prepared_job)
 
-            # Locations in the current JSON file replace previously stored ones.
+            # Locations in the current JSON file replace previously 
+            # stored ones.
             connection.execute(
                 """
                 DELETE FROM job_locations
@@ -301,11 +306,11 @@ def load_jobs(
                 locations = []
 
             if not isinstance(locations, list):
-                raise ValueError("'locations' must be a list")
+                raise TypeError("'locations' must be a list")
 
             for location in locations:
                 if not isinstance(location, dict):
-                    raise ValueError("Each location must be a JSON object")
+                    raise TypeError("Each location must be a JSON object")
 
                 connection.execute(
                     INSERT_LOCATION_SQL,
