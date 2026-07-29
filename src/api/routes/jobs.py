@@ -10,7 +10,7 @@ from pathlib import Path
 import sqlite3
 
 from fastapi import APIRouter, HTTPException, Query, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 # region Setup
 
@@ -35,15 +35,13 @@ DATABASE_PATH = (
 
 # region SQL queries
 
-GET_JOBS_SQL = """
+GET_ALL_JOBS_SQL = """
 SELECT
     reference_number,
     title,
     company,
     occupation
 FROM jobs
-ORDER BY publication_date DESC
-LIMIT ? OFFSET ?
 """
 
 GET_SINGLE_JOB_SQL = """
@@ -92,11 +90,11 @@ ORDER BY id
 # endregion
 
 
-# region Response models
+# region Pydantic models
 
 
-class JobResponse(BaseModel):
-    """Response returned by the get jobs endpoint."""
+class JobModel(BaseModel):
+    """A compact representation of a job advertisement."""
 
     reference_number: str
     title: str
@@ -104,7 +102,9 @@ class JobResponse(BaseModel):
     occupation: str | None = None
 
 
-class JobLocationResponse(BaseModel):
+class JobLocationModel(BaseModel):
+    """A geographical location associated with a job advertisement."""
+
     postal_code: str | None = None
     city: str | None = None
     region: str | None = None
@@ -113,7 +113,9 @@ class JobLocationResponse(BaseModel):
     longitude: float | None = None
 
 
-class JobDetailResponse(JobResponse):
+class JobDetailModel(JobModel):
+    """A complete job advertisement, including details and locations."""
+
     description: str | None = None
     offer_type: str | None = None
     full_time: bool | None = None
@@ -134,7 +136,8 @@ class JobDetailResponse(JobResponse):
     partner_name: str | None = None
     partner_url: str | None = None
     employer_customer_hash: str | None = None
-    locations: list[JobLocationResponse]
+    # ensures that the default value is a new empty list for EACH instance:
+    locations: list[JobLocationModel] = Field(default_factory=list)
 
 
 # endregion
@@ -164,7 +167,7 @@ def _check_if_database_exists() -> None:
     "",
     summary="Get jobs",
     response_description="A list of available jobs",
-    response_model=list[JobResponse],
+    response_model=list[JobModel],
     responses={
         503: {
             "description": "The job database is unavailable",
@@ -177,30 +180,101 @@ def get_jobs(
         ge=1,
         le=100,
         description="Maximum number of jobs to return",
+        examples=[5, 10, 20],
+        openapi_examples={
+            "small": {
+                "summary": "Small result set",
+                "value": 5,
+            },
+            "medium": {
+                "summary": "Medium result set",
+                "value": 10,
+            },
+            "large": {
+                "summary": "Large result set",
+                "value": 20,
+            },
+        },
     ),
     offset: int = Query(
         default=0,
         ge=0,
         description="Number of jobs to skip",
+        examples=[0],
     ),
-) -> list[JobResponse]:
+    city: str | None = Query(
+        default=None,
+        description="City to filter jobs by",
+        examples=["Berlin", "München", "Hamburg"],
+    ),
+    company: str | None = Query(
+        default=None,
+        description="Company name to filter jobs by",
+        examples=["FERCHAU"],
+        openapi_examples={
+            "FERCHAU": {
+                "summary": "FERCHAU GmbH",
+                "value": "FERCHAU",
+            },
+        },
+    ),
+    home_office: bool | None = Query(
+        default=None,
+        description="Filter by home-office availability",
+        examples=[None, True, False],
+    ),
+) -> list[JobModel]:
     """
     Return jobs ordered by publication date, newest first.
 
     Use `limit` and `offset` to paginate through the available jobs.
     If the offset is beyond the available results, an empty list is returned.
+
+    Optional query parameters can be used to filter the results by
+    - city,
+    - company name
+    - home-office availability.
     """
     _check_if_database_exists()
+
+    query_conditions = []
+    query_parameters = []
+
+    if city is not None:
+        query_conditions.append("""
+            EXISTS (
+                SELECT 1
+                FROM job_locations
+                WHERE job_locations.reference_number = jobs.reference_number
+                  AND LOWER(job_locations.city) = LOWER(?)
+            )
+            """)
+        query_parameters.append(city)
+
+    if company is not None:
+        query_conditions.append("LOWER(company) LIKE LOWER(?)")
+        query_parameters.append(f"%{company}%")
+
+    if home_office is not None:
+        query_conditions.append("home_office_possible = ?")
+        query_parameters.append(home_office)
+
+    query = GET_ALL_JOBS_SQL
+
+    if query_conditions:
+        query += " WHERE " + " AND ".join(query_conditions)
+
+    query += """
+    ORDER BY publication_date DESC, reference_number ASC
+    LIMIT ? OFFSET ?
+    """
+
+    query_parameters.extend([limit, offset])
 
     try:
         with sqlite3.connect(DATABASE_PATH) as connection:
             connection.row_factory = sqlite3.Row
-
-            rows = connection.execute(
-                GET_JOBS_SQL,
-                (limit, offset),
-            ).fetchall()
-
+            rows = connection.execute(query, query_parameters).fetchall()
     except sqlite3.Error:
         logger.exception("Could not read the job database")
 
@@ -209,14 +283,14 @@ def get_jobs(
             detail="The job database is unavailable.",
         )
 
-    return [JobResponse(**dict(row)) for row in rows]
+    return [JobModel(**dict(row)) for row in rows]
 
 
 @router.get(
     "/{reference_number}",
     summary="Get a single job",
     response_description="The complete job advertisement",
-    response_model=JobDetailResponse,
+    response_model=JobDetailModel,
     responses={
         404: {
             "description": "The requested job was not found",
@@ -226,7 +300,7 @@ def get_jobs(
         },
     },
 )
-def get_single_job(reference_number: str) -> JobDetailResponse:
+def get_single_job(reference_number: str) -> JobDetailModel:
     """
     Return a complete job advertisement and all its locations.
 
@@ -263,9 +337,9 @@ def get_single_job(reference_number: str) -> JobDetailResponse:
         )
 
     job_data = dict(job_row)
-    job_data["locations"] = [JobLocationResponse(**dict(row)) for row in location_rows]
+    job_data["locations"] = [JobLocationModel(**dict(row)) for row in location_rows]
 
-    return JobDetailResponse(**job_data)
+    return JobDetailModel(**job_data)
 
 
 # endregion
