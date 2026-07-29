@@ -6,11 +6,14 @@ collected and processed by the data pipeline.
 """
 
 import logging
-from pathlib import Path
-import sqlite3
 
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
+
+from src.data.sqlite_database import (
+    DatabaseUnavailableError,
+    get_database_connection,
+)
 
 # region Setup
 
@@ -24,17 +27,9 @@ router = APIRouter(
 # endregion
 
 
-# region Constants
-
-DATABASE_PATH = (
-    Path(__file__).resolve().parents[2] / "data" / "processed" / "job_market.sqlite3"
-)
-
-# endregion
-
-
 # region SQL queries
 
+# Retrieve summary information for all stored jobs.
 GET_ALL_JOBS_SQL = """
 SELECT
     reference_number,
@@ -44,6 +39,7 @@ SELECT
 FROM jobs
 """
 
+# Retrieve all available details for one job.
 GET_SINGLE_JOB_SQL = """
 SELECT
     reference_number,
@@ -74,6 +70,7 @@ FROM jobs
 WHERE reference_number = ?
 """
 
+# Retrieve all locations associated with one job.
 GET_JOB_LOCATIONS_SQL = """
 SELECT
     postal_code,
@@ -138,23 +135,6 @@ class JobDetailModel(JobModel):
     employer_customer_hash: str | None = None
     # ensures that the default value is a new empty list for EACH instance:
     locations: list[JobLocationModel] = Field(default_factory=list)
-
-
-# endregion
-
-
-# region Auxiliary functions
-
-
-def _check_if_database_exists() -> None:
-    """Check if the job database exists."""
-    if not DATABASE_PATH.is_file():
-        logger.error("Job database does not exist: %s", DATABASE_PATH)
-
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="The job database is unavailable.",
-        )
 
 
 # endregion
@@ -235,7 +215,6 @@ def get_jobs(
     - company name
     - home-office availability.
     """
-    _check_if_database_exists()
 
     query_conditions = []
     query_parameters = []
@@ -272,10 +251,9 @@ def get_jobs(
     query_parameters.extend([limit, offset])
 
     try:
-        with sqlite3.connect(DATABASE_PATH) as connection:
-            connection.row_factory = sqlite3.Row
+        with get_database_connection() as connection:
             rows = connection.execute(query, query_parameters).fetchall()
-    except sqlite3.Error:
+    except DatabaseUnavailableError:
         logger.exception("Could not read the job database")
 
         raise HTTPException(
@@ -306,11 +284,8 @@ def get_single_job(reference_number: str) -> JobDetailModel:
 
     A 404 response is returned if the reference number is unknown.
     """
-    _check_if_database_exists()
-
     try:
-        with sqlite3.connect(DATABASE_PATH) as connection:
-            connection.row_factory = sqlite3.Row
+        with get_database_connection() as connection:
 
             job_row = connection.execute(
                 GET_SINGLE_JOB_SQL,
@@ -328,7 +303,7 @@ def get_single_job(reference_number: str) -> JobDetailModel:
                 (reference_number,),
             ).fetchall()
 
-    except sqlite3.Error:
+    except DatabaseUnavailableError:
         logger.exception("Could not read the job database")
 
         raise HTTPException(

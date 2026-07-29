@@ -6,11 +6,14 @@ collected and processed by the data pipeline.
 """
 
 import logging
-from pathlib import Path
-import sqlite3
 
 from fastapi import APIRouter, HTTPException, Query, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
+
+from src.data.sqlite_database import (
+    DatabaseUnavailableError,
+    get_database_connection,
+)
 
 # region Setup
 
@@ -24,17 +27,9 @@ router = APIRouter(
 # endregion
 
 
-# region Constants
-
-DATABASE_PATH = (
-    Path(__file__).resolve().parents[2] / "data" / "processed" / "job_market.sqlite3"
-)
-
-# endregion
-
-
 # region SQL queries
 
+# Retrieve the general numbers and publication-date range of stored jobs.
 GET_OVERVIEW_SQL = """
 SELECT
     COUNT(*) AS total_jobs,
@@ -48,6 +43,7 @@ SELECT
 FROM jobs
 """
 
+# Count distinct locations that have a valid city.
 GET_TOTAL_LOCATIONS_SQL = """
 SELECT COUNT(*) AS total_locations
 FROM (
@@ -61,6 +57,7 @@ FROM (
 )
 """
 
+# Retrieve companies with the highest numbers of job advertisements.
 GET_COMPANY_STATISTICS_SQL = """
 SELECT
     company,
@@ -73,6 +70,7 @@ ORDER BY job_count DESC, company ASC
 LIMIT ?
 """
 
+# Retrieve locations with the highest numbers of distinct jobs.
 GET_LOCATION_STATISTICS_SQL = """
 SELECT
     city,
@@ -94,7 +92,7 @@ ORDER BY
 LIMIT ?
 """
 
-
+# Count jobs by their reported home-office availability.
 GET_HOME_OFFICE_STATISTICS_SQL = """
 SELECT
     COUNT(
@@ -152,23 +150,6 @@ class HomeOfficeStatisticsModel(BaseModel):
 # endregion
 
 
-# region Auxiliary functions
-
-
-def _check_if_database_exists() -> None:
-    """Check if the job database exists."""
-    if not DATABASE_PATH.is_file():
-        logger.error("Job database does not exist: %s", DATABASE_PATH)
-
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="The job database is unavailable.",
-        )
-
-
-# endregion
-
-
 # region API endpoints
 
 
@@ -187,14 +168,11 @@ def get_overview() -> StatisticsOverviewModel:
     """
     Return general statistics about the stored job advertisements.
     """
-    _check_if_database_exists()
-
     try:
-        with sqlite3.connect(DATABASE_PATH) as connection:
-            connection.row_factory = sqlite3.Row
+        with get_database_connection() as connection:
             overview_row = connection.execute(GET_OVERVIEW_SQL).fetchone()
             locations_row = connection.execute(GET_TOTAL_LOCATIONS_SQL).fetchone()
-    except sqlite3.Error:
+    except DatabaseUnavailableError:
         logger.exception("Could not read statistics from the job database")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -246,18 +224,14 @@ def get_company_statistics(
 
     Companies without a name are excluded.
     """
-    _check_if_database_exists()
-
     try:
-        with sqlite3.connect(DATABASE_PATH) as connection:
-            connection.row_factory = sqlite3.Row
-
+        with get_database_connection() as connection:
             rows = connection.execute(
                 GET_COMPANY_STATISTICS_SQL,
                 (limit,),
             ).fetchall()
 
-    except sqlite3.Error:
+    except DatabaseUnavailableError:
         logger.exception("Could not read company statistics from the job database")
 
         raise HTTPException(
@@ -307,18 +281,16 @@ def get_location_statistics(
 
     Locations without a city are excluded.
     """
-    _check_if_database_exists()
 
     try:
-        with sqlite3.connect(DATABASE_PATH) as connection:
-            connection.row_factory = sqlite3.Row
+        with get_database_connection() as connection:
 
             rows = connection.execute(
                 GET_LOCATION_STATISTICS_SQL,
                 (limit,),
             ).fetchall()
 
-    except sqlite3.Error:
+    except DatabaseUnavailableError:
         logger.exception("Could not read location statistics from the job database")
 
         raise HTTPException(
@@ -346,15 +318,13 @@ def get_home_office_statistics() -> HomeOfficeStatisticsModel:
     """
     Return job counts grouped by home-office availability.
     """
-    _check_if_database_exists()
 
     try:
-        with sqlite3.connect(DATABASE_PATH) as connection:
-            connection.row_factory = sqlite3.Row
+        with get_database_connection() as connection:
 
             row = connection.execute(GET_HOME_OFFICE_STATISTICS_SQL).fetchone()
 
-    except sqlite3.Error:
+    except DatabaseUnavailableError:
         logger.exception("Could not read home-office statistics from the job database")
 
         raise HTTPException(
