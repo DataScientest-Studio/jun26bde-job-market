@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 from typing import Any
+
 import requests
 
 
@@ -36,7 +37,7 @@ class ArbeitsagenturClient:
     def search_jobs(
         self,
         keyword: str,
-        *,  # location, page_number and jobs_per_page are keyword-only arguments (must be specified with their names on the call)
+        *,
         location: str | None = None,
         page_number: int = 1,
         jobs_per_page: int = 25,
@@ -68,7 +69,7 @@ class ArbeitsagenturClient:
         data = response.json()
 
         if not isinstance(data, dict):
-            raise ValueError("Expected the API response to be a JSON object")
+            raise TypeError("Expected the API response to be a JSON object")
 
         return data
 
@@ -91,6 +92,6 @@ class ArbeitsagenturClient:
         data = response.json()
 
         if not isinstance(data, dict):
-            raise ValueError("Expected the API response to be a JSON object")
+            raise TypeError("Expected the API response to be a JSON object")
 
         return data

@@ -2,6 +2,8 @@
 __pycache__/
 *.py[cod]
 
+pyproject.toml
+
 # C extensions
 *.so
 
@@ -91,3 +93,6 @@ target/
 
 # Generated data
 /src/data/raw/
+map.html
+src/features/geocoding_sqlite3.py
+src/tests/database_explore.py

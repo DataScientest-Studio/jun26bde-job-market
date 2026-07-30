@@ -64,7 +64,6 @@ CREATE TABLE IF NOT EXISTS job_locations (
 );
 """
 
-
 CREATE_LOCATION_INDEX_SQL = """
 CREATE INDEX IF NOT EXISTS idx_job_locations_reference_number
 ON job_locations (reference_number);
@@ -216,7 +215,7 @@ def parse_arguments() -> argparse.Namespace:
         "--database",
         type=Path,
         default=DEFAULT_DATABASE_PATH,
-        help=("Path to the SQLite database. " f"Default: {DEFAULT_DATABASE_PATH}"),
+        help=(f"Path to the SQLite database. Default: {DEFAULT_DATABASE_PATH}"),
     )
 
     return parser.parse_args()
@@ -232,13 +231,14 @@ def load_json(source_path: Path) -> list[dict[str, Any]]:
         data = json.load(file)
 
     if not isinstance(data, list):
-        raise ValueError("Expected the JSON file to contain a list of jobs")
+        raise TypeError("Expected the JSON file to contain a list of jobs")
 
     jobs: list[dict[str, Any]] = []
 
     for index, item in enumerate(data, start=1):
         if not isinstance(item, dict):
-            raise ValueError(f"Job {index} is not a JSON object")
+            print(f"Skipping entry {index}: not a JSON object")
+            continue
 
         jobs.append(item)
 
@@ -253,7 +253,8 @@ def prepare_job(job: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(reference_number, str) or not reference_number:
         raise ValueError("Job is missing a valid reference_number")
 
-    # Exclude locations because they are stored separately in the job_locations table.
+    # Exclude locations because they are stored separately in the
+    # job_locations table.
     prepared_job = {key: value for key, value in job.items() if key != "locations"}
 
     for field in BOOLEAN_FIELDS:
@@ -286,7 +287,8 @@ def load_jobs(
 
             connection.execute(UPSERT_JOB_SQL, prepared_job)
 
-            # Locations in the current JSON file replace previously stored ones.
+            # Locations in the current JSON file replace previously
+            # stored ones.
             connection.execute(
                 """
                 DELETE FROM job_locations
@@ -301,11 +303,11 @@ def load_jobs(
                 locations = []
 
             if not isinstance(locations, list):
-                raise ValueError("'locations' must be a list")
+                raise TypeError("'locations' must be a list")
 
             for location in locations:
                 if not isinstance(location, dict):
-                    raise ValueError("Each location must be a JSON object")
+                    raise TypeError("Each location must be a JSON object")
 
                 connection.execute(
                     INSERT_LOCATION_SQL,
@@ -319,10 +321,9 @@ def load_jobs(
                         "longitude": location.get("longitude"),
                     },
                 )
-
             num_loaded_jobs += 1
 
-        except (ValueError, sqlite3.Error) as error:
+        except (ValueError, TypeError, sqlite3.Error) as error:
             num_skipped_jobs += 1
             print(f"Skipping job {job_number}: {error}")
 
@@ -336,19 +337,21 @@ def load_clean_jobs_to_sqlite(
     """Create the SQLite database and load cleaned jobs into it."""
 
     database_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with sqlite3.connect(database_path, isolation_level=None) as connection:
+            connection.execute("PRAGMA foreign_keys = ON")
 
-    with sqlite3.connect(database_path) as connection:
-        connection.execute("PRAGMA foreign_keys = ON")
+            create_schema(connection)
 
-        create_schema(connection)
+            num_loaded_jobs, num_skipped_jobs = load_jobs(
+                connection=connection,
+                jobs=jobs,
+            )
 
-        num_loaded_jobs, num_skipped_jobs = load_jobs(
-            connection=connection,
-            jobs=jobs,
-        )
-
-    return num_loaded_jobs, num_skipped_jobs
-
+            return num_loaded_jobs, num_skipped_jobs
+    except sqlite3.Error as error:
+        print(f"Database error, aborting load: {error}")
+        raise
 
 def main() -> None:
     """Load a clean-jobs JSON file into SQLite."""
@@ -365,7 +368,7 @@ def main() -> None:
 
     jobs = load_json(source_path)
 
-    with sqlite3.connect(database_path) as connection:
+    with sqlite3.connect(database_path, isolation_level=None) as connection:
         connection.execute("PRAGMA foreign_keys = ON")
         create_schema(connection)
 

@@ -6,14 +6,15 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
 import requests
 
 from src.data.arbeitsagentur_client import ArbeitsagenturClient
-
 from src.data.sqlite_loader import (
     DEFAULT_DATABASE_PATH,
     load_clean_jobs_to_sqlite,
 )
+from src.features.geocoding_json import JobLocationGeocoder
 
 RAW_DATA_DIRECTORY = Path(__file__).resolve().parent / "raw" / "arbeitsagentur"
 
@@ -100,10 +101,10 @@ def clean_job(raw_job: dict[str, Any]) -> dict[str, Any]:
 def main() -> None:
     arbeitsagentur_client = ArbeitsagenturClient()
 
-    keyword = "Data Engineer"
+    keywords = ["Data Engineer", "Data Analyst"]
     first_page = 1
     number_of_pages = 3
-    jobs_per_page = 10
+    jobs_per_page = 50
 
     extraction_time = datetime.now(timezone.utc)
     output_directory = RAW_DATA_DIRECTORY / extraction_time.strftime(
@@ -111,39 +112,53 @@ def main() -> None:
     )
 
     all_jobs: list[dict[str, Any]] = []
+    seen_reference_numbers: set[str] = set()
 
-    for page_number in range(
-        first_page,
-        first_page + number_of_pages,
-    ):
-        print(
-            f"Searching for {keyword!r}, "
-            f"page {page_number}, "
-            f"jobs per page {jobs_per_page}..."
-        )
-
-        try:
-            search_result = arbeitsagentur_client.search_jobs(
-                keyword=keyword,
-                page_number=page_number,
-                jobs_per_page=jobs_per_page,
+    for keyword in keywords:
+        for page_number in range(
+            first_page,
+            first_page + number_of_pages,
+        ):
+            print(
+                f"Searching for {keyword!r}, "
+                f"page {page_number}, "
+                f"jobs per page {jobs_per_page}..."
             )
-        except requests.RequestException as error:
-            print(f"Failed to retrieve search page " f"{page_number}: {error}")
-            continue
 
-        search_output_path = output_directory / f"search-page-{page_number}.json"
-        save_json(search_result, search_output_path)
+            try:
+                search_result = arbeitsagentur_client.search_jobs(
+                    keyword=keyword,
+                    page_number=page_number,
+                    jobs_per_page=jobs_per_page,
+                )
+            except requests.RequestException as error:
+                print(f"Failed to retrieve search page {page_number}: {error}")
+                continue
 
-        print(f"Raw search response saved to: {search_output_path}")
+            search_output_path = (
+                output_directory / f"search-page-{page_number}.json"
+            )
+            save_json(search_result, search_output_path)
 
-        jobs = search_result.get("ergebnisliste")
+            print(f"Raw search response saved to: {search_output_path}")
 
-        if not isinstance(jobs, list):
-            print(f"Skipping page {page_number}: " "'ergebnisliste' is not a list")
-            continue
+            jobs = search_result.get("ergebnisliste")
 
-        all_jobs.extend(jobs)
+            if not isinstance(jobs, list):
+                print(
+                    f"Skipping page {page_number}: 'ergebnisliste' is not a list"
+                )
+                continue
+
+            #all_jobs.extend(jobs)
+            for job in jobs:
+                reference_number = job.get("referenznummer")
+                if not isinstance(reference_number, str) or not reference_number:
+                    continue
+                if reference_number in seen_reference_numbers:
+                    continue
+                seen_reference_numbers.add(reference_number)
+                all_jobs.append(job)
 
     print(f"Retrieved {len(all_jobs)} search results in total.")
 
@@ -154,19 +169,20 @@ def main() -> None:
         reference_number = job.get("referenznummer")
 
         if not isinstance(reference_number, str) or not reference_number:
-            print(f"Skipping job {job_number}: " "missing or invalid referenznummer")
+            print(
+                f"Skipping job {job_number}: missing or invalid referenznummer"
+            )
             continue
 
         print(
-            f"Retrieving details for "
-            f"{job_number}/{len(all_jobs)}: "
-            f"{reference_number}"
+            f"Retrieving details for"
+            f"{job_number}/{len(all_jobs)}: {reference_number}"
         )
 
         try:
             details = arbeitsagentur_client.get_job_details(reference_number)
         except requests.RequestException as error:
-            print(f"Failed to retrieve {reference_number}: " f"{error}")
+            print(f"Failed to retrieve {reference_number}: {error}")
 
             failed_jobs.append(
                 {
@@ -186,6 +202,12 @@ def main() -> None:
 
     clean_jobs = [clean_job(raw_job) for raw_job in job_details]
 
+    geocoder = JobLocationGeocoder(delay_seconds=1.0)
+    clean_jobs, num_malformed_locations = geocoder.enrich_jobs(clean_jobs)
+
+    if num_malformed_locations:
+        print(f"Skipped {num_malformed_locations} malformed location entries.")
+
     clean_output_path = output_directory / "clean-jobs.json"
     save_json(clean_jobs, clean_output_path)
 
@@ -193,7 +215,9 @@ def main() -> None:
         jobs=clean_jobs,
     )
 
-    print(f"Successfully retrieved {len(job_details)}/{len(all_jobs)} job details.")
+    print(
+        f"Successfully got {len(job_details)}/{len(all_jobs)} job details."
+    )
     print(f"Raw job details saved to: {details_output_path}")
     print(f"Clean job data saved to: {clean_output_path}")
     print(f"SQLite database updated: {DEFAULT_DATABASE_PATH}")
