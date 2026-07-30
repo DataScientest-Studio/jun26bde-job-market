@@ -1,10 +1,4 @@
-
-black==26.5.1
-geopy==2.5.0
-pandas==3.0.5
-numpy==2.5.1
-fastapi==0.141.1
-folium==0.20.0
-requests==2.34.2
-uvicorn==0.52.0
-
+# HTTP client for accessing external APIs (at least 2.32 but less than 3 for better stability)
+requests>=2.32,<3
+fastapi>=0.115,<1.0
+uvicorn>=0.35,<1.0

@@ -1,0 +1,338 @@
+"""
+API routes for reading job advertisements from the processed SQLite database.
+
+The endpoints in this module provide read-only access to jobs previously
+collected and processed by the data pipeline.
+"""
+
+import logging
+
+from fastapi import APIRouter, HTTPException, Query, status
+from pydantic import BaseModel
+
+from src.data.sqlite_database import (
+    DatabaseUnavailableError,
+    get_database_connection,
+)
+
+# region Setup
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(
+    prefix="/statistics",
+    tags=["Statistics"],
+)
+
+# endregion
+
+
+# region SQL queries
+
+# Retrieve the general numbers and publication-date range of stored jobs.
+GET_OVERVIEW_SQL = """
+SELECT
+    COUNT(*) AS total_jobs,
+    COUNT(
+        DISTINCT CASE
+            WHEN TRIM(company) <> '' THEN company
+        END
+    ) AS total_companies,
+    MIN(publication_date) AS earliest_publication_date,
+    MAX(publication_date) AS latest_publication_date
+FROM jobs
+"""
+
+# Count distinct locations that have a valid city.
+GET_TOTAL_LOCATIONS_SQL = """
+SELECT COUNT(*) AS total_locations
+FROM (
+    SELECT DISTINCT
+        city,
+        region,
+        country
+    FROM job_locations
+    WHERE city IS NOT NULL
+      AND TRIM(city) <> ''
+)
+"""
+
+# Retrieve companies with the highest numbers of job advertisements.
+GET_COMPANY_STATISTICS_SQL = """
+SELECT
+    company,
+    COUNT(*) AS job_count
+FROM jobs
+WHERE company IS NOT NULL
+  AND TRIM(company) <> ''
+GROUP BY company
+ORDER BY job_count DESC, company ASC
+LIMIT ?
+"""
+
+# Retrieve locations with the highest numbers of distinct jobs.
+GET_LOCATION_STATISTICS_SQL = """
+SELECT
+    city,
+    region,
+    country,
+    COUNT(DISTINCT reference_number) AS job_count
+FROM job_locations
+WHERE city IS NOT NULL
+  AND TRIM(city) <> ''
+GROUP BY
+    city,
+    region,
+    country
+ORDER BY
+    job_count DESC,
+    country ASC,
+    region ASC,
+    city ASC
+LIMIT ?
+"""
+
+# Count jobs by their reported home-office availability.
+GET_HOME_OFFICE_STATISTICS_SQL = """
+SELECT
+    COUNT(
+        CASE WHEN home_office_possible = 1 THEN 1 END
+    ) AS possible,
+    COUNT(
+        CASE WHEN home_office_possible = 0 THEN 1 END
+    ) AS not_possible,
+    COUNT(
+        CASE WHEN home_office_possible IS NULL THEN 1 END
+    ) AS unknown
+FROM jobs
+"""
+
+# endregion
+
+
+# region Pydantic models
+
+
+class StatisticsOverviewModel(BaseModel):
+    """An overview of the job advertisements stored in the database."""
+
+    total_jobs: int
+    total_companies: int
+    total_locations: int
+    earliest_publication_date: str | None = None
+    latest_publication_date: str | None = None
+
+
+class CompanyStatisticsModel(BaseModel):
+    """The number of job advertisements stored for a company."""
+
+    company: str
+    job_count: int
+
+
+class LocationStatisticsModel(BaseModel):
+    """The number of job advertisements stored for a location."""
+
+    city: str
+    region: str | None = None
+    country: str | None = None
+    job_count: int
+
+
+class HomeOfficeStatisticsModel(BaseModel):
+    """The availability of home office among stored job advertisements."""
+
+    possible: int
+    not_possible: int
+    unknown: int
+
+
+# endregion
+
+
+# region API endpoints
+
+
+@router.get(
+    "/overview",
+    summary="Get job statistics overview",
+    response_description="An overview of the stored job advertisements",
+    response_model=StatisticsOverviewModel,
+    responses={
+        503: {
+            "description": "The job database is unavailable",
+        }
+    },
+)
+def get_overview() -> StatisticsOverviewModel:
+    """
+    Return general statistics about the stored job advertisements.
+    """
+    try:
+        with get_database_connection() as connection:
+            overview_row = connection.execute(GET_OVERVIEW_SQL).fetchone()
+            locations_row = connection.execute(GET_TOTAL_LOCATIONS_SQL).fetchone()
+    except DatabaseUnavailableError:
+        logger.exception("Could not read statistics from the job database")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="The job database is unavailable.",
+        )
+
+    overview_data = dict(overview_row)
+    overview_data["total_locations"] = locations_row["total_locations"]
+
+    return StatisticsOverviewModel(**overview_data)
+
+
+@router.get(
+    "/companies",
+    summary="Get company statistics",
+    response_description="Companies and their numbers of job advertisements",
+    response_model=list[CompanyStatisticsModel],
+    responses={
+        503: {
+            "description": "The job database is unavailable",
+        }
+    },
+)
+def get_company_statistics(
+    limit: int = Query(
+        default=20,
+        ge=1,
+        le=100,
+        description="Maximum number of companies to return",
+        examples=[5, 10, 20],
+        openapi_examples={
+            "small": {
+                "summary": "Five companies",
+                "value": 5,
+            },
+            "medium": {
+                "summary": "Ten companies",
+                "value": 10,
+            },
+            "large": {
+                "summary": "Twenty companies",
+                "value": 20,
+            },
+        },
+    ),
+) -> list[CompanyStatisticsModel]:
+    """
+    Return companies ordered by their number of job advertisements.
+
+    Companies without a name are excluded.
+    """
+    try:
+        with get_database_connection() as connection:
+            rows = connection.execute(
+                GET_COMPANY_STATISTICS_SQL,
+                (limit,),
+            ).fetchall()
+
+    except DatabaseUnavailableError:
+        logger.exception("Could not read company statistics from the job database")
+
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="The job database is unavailable.",
+        )
+
+    return [CompanyStatisticsModel(**dict(row)) for row in rows]
+
+
+@router.get(
+    "/locations",
+    summary="Get location statistics",
+    response_description="Locations and their numbers of job advertisements",
+    response_model=list[LocationStatisticsModel],
+    responses={
+        503: {
+            "description": "The job database is unavailable",
+        }
+    },
+)
+def get_location_statistics(
+    limit: int = Query(
+        default=20,
+        ge=1,
+        le=100,
+        description="Maximum number of locations to return",
+        examples=[5, 10, 20],
+        openapi_examples={
+            "small": {
+                "summary": "Five locations",
+                "value": 5,
+            },
+            "medium": {
+                "summary": "Ten locations",
+                "value": 10,
+            },
+            "large": {
+                "summary": "Twenty locations",
+                "value": 20,
+            },
+        },
+    ),
+) -> list[LocationStatisticsModel]:
+    """
+    Return locations ordered by their number of job advertisements.
+
+    Locations without a city are excluded.
+    """
+
+    try:
+        with get_database_connection() as connection:
+
+            rows = connection.execute(
+                GET_LOCATION_STATISTICS_SQL,
+                (limit,),
+            ).fetchall()
+
+    except DatabaseUnavailableError:
+        logger.exception("Could not read location statistics from the job database")
+
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="The job database is unavailable.",
+        )
+
+    return [LocationStatisticsModel(**dict(row)) for row in rows]
+
+
+@router.get(
+    "/home-office",
+    summary="Get home-office statistics",
+    response_description=(
+        "Numbers of jobs with possible, unavailable, or unknown home office"
+    ),
+    response_model=HomeOfficeStatisticsModel,
+    responses={
+        503: {
+            "description": "The job database is unavailable",
+        }
+    },
+)
+def get_home_office_statistics() -> HomeOfficeStatisticsModel:
+    """
+    Return job counts grouped by home-office availability.
+    """
+
+    try:
+        with get_database_connection() as connection:
+
+            row = connection.execute(GET_HOME_OFFICE_STATISTICS_SQL).fetchone()
+
+    except DatabaseUnavailableError:
+        logger.exception("Could not read home-office statistics from the job database")
+
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="The job database is unavailable.",
+        )
+
+    return HomeOfficeStatisticsModel(**dict(row))
+
+
+# endregion
