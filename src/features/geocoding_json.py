@@ -3,6 +3,8 @@ from __future__ import annotations
 import time
 from typing import Any
 
+from geopy.exc import GeopyError
+from geopy.extra.rate_limiter import RateLimiter
 from geopy.geocoders import Nominatim
 
 
@@ -11,9 +13,19 @@ class JobLocationGeocoder:
         self,
         user_agent: str = "job-market-mapper",
         delay_seconds: float = 1.0,
+        max_retries: int = 2,
+        error_wait_seconds: float = 5.0,
     ) -> None:
         self.geolocator = Nominatim(user_agent=user_agent)
         self.delay_seconds = delay_seconds
+        self._geocode = RateLimiter(
+            self.geolocator.geocode,
+            min_delay_seconds=delay_seconds,
+            max_retries=max_retries,
+            error_wait_seconds=error_wait_seconds,
+            swallow_exceptions=True,
+            return_value_on_exception=None,
+        )
         self._cache: dict[str, tuple[float | None, float | None]] = {}
 
     @staticmethod
@@ -36,13 +48,7 @@ class JobLocationGeocoder:
         if not any([postal_code, city, country]):
             return None, None
 
-        query_parts: list[str] = []
-        if postal_code:
-            query_parts.append(postal_code)
-        if city:
-            query_parts.append(city)
-        if country:
-            query_parts.append(country)
+        query_parts = [part for part in (postal_code, city, country) if part]
 
         query = ", ".join(query_parts)
 
@@ -55,9 +61,13 @@ class JobLocationGeocoder:
 
             if location:
                 result = (location.latitude, location.longitude)
-                self._cache[query] = result
-                return result
-        except TypeError as error:
+            else:
+
+                print(f"Geocoding returned no result for '{query}'")
+                result = (None, None)
+            self._cache[query] = result
+            return result
+        except GeopyError as error:
             print(f"Geocoding failed for '{query}': {error}")
 
         self._cache[query] = (None, None)
@@ -91,21 +101,36 @@ class JobLocationGeocoder:
 
         if not isinstance(locations, list):
             return job
+        
 
-        job["locations"] = [
-            self.enrich_location(location)
-            for location in locations
-            if isinstance(location, dict)
-        ]
-        return job
+        enriched_locations = []
+        num_malformed = 0
 
-    def enrich_jobs(self, jobs: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        return [self.enrich_job(job) for job in jobs]
+        for location in locations:
+            if not isinstance(location,dict):
+                print(f"Skipping malformed location entry (not a dict): {location!r}")
+                num_malformed += 1
+                continue
+            enriched_locations.append(self.enrich_location(location))
+
+        job["locations"] = enriched_locations
+        return job, num_malformed
+
+    def enrich_jobs(self, jobs: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
+        enriched_jobs = []
+        total_malformed = 0
+
+        for job in jobs:
+            enriched_job, num_malformed = self.enrich_job(job)
+            enriched_jobs.append(enriched_job)
+            total_malformed += num_malformed
+
+        return enriched_jobs, total_malformed
 
 
 def enrich_jobs_with_geocoding(
     jobs: list[dict[str, Any]],
     delay_seconds: float = 1.0,
-) -> list[dict[str, Any]]:
+) -> tuple[list[dict[str, Any]], int]:
     geocoder = JobLocationGeocoder(delay_seconds=delay_seconds)
     return geocoder.enrich_jobs(jobs)

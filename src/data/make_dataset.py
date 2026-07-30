@@ -101,7 +101,7 @@ def clean_job(raw_job: dict[str, Any]) -> dict[str, Any]:
 def main() -> None:
     arbeitsagentur_client = ArbeitsagenturClient()
 
-    keyword = "Data Engineer", "Data Analyst"
+    keywords = ["Data Engineer", "Data Analyst"]
     first_page = 1
     number_of_pages = 3
     jobs_per_page = 50
@@ -112,43 +112,53 @@ def main() -> None:
     )
 
     all_jobs: list[dict[str, Any]] = []
+    seen_reference_numbers: set[str] = set()
 
-    for page_number in range(
-        first_page,
-        first_page + number_of_pages,
-    ):
-        print(
-            f"Searching for {keyword!r}, "
-            f"page {page_number}, "
-            f"jobs per page {jobs_per_page}..."
-        )
-
-        try:
-            search_result = arbeitsagentur_client.search_jobs(
-                keyword=keyword,
-                page_number=page_number,
-                jobs_per_page=jobs_per_page,
-            )
-        except requests.RequestException as error:
-            print(f"Failed to retrieve search page {page_number}: {error}")
-            continue
-
-        search_output_path = (
-            output_directory / f"search-page-{page_number}.json"
-        )
-        save_json(search_result, search_output_path)
-
-        print(f"Raw search response saved to: {search_output_path}")
-
-        jobs = search_result.get("ergebnisliste")
-
-        if not isinstance(jobs, list):
+    for keyword in keywords:
+        for page_number in range(
+            first_page,
+            first_page + number_of_pages,
+        ):
             print(
-                f"Skipping page {page_number}: 'ergebnisliste' is not a list"
+                f"Searching for {keyword!r}, "
+                f"page {page_number}, "
+                f"jobs per page {jobs_per_page}..."
             )
-            continue
 
-        all_jobs.extend(jobs)
+            try:
+                search_result = arbeitsagentur_client.search_jobs(
+                    keyword=keyword,
+                    page_number=page_number,
+                    jobs_per_page=jobs_per_page,
+                )
+            except requests.RequestException as error:
+                print(f"Failed to retrieve search page {page_number}: {error}")
+                continue
+
+            search_output_path = (
+                output_directory / f"search-page-{page_number}.json"
+            )
+            save_json(search_result, search_output_path)
+
+            print(f"Raw search response saved to: {search_output_path}")
+
+            jobs = search_result.get("ergebnisliste")
+
+            if not isinstance(jobs, list):
+                print(
+                    f"Skipping page {page_number}: 'ergebnisliste' is not a list"
+                )
+                continue
+
+            #all_jobs.extend(jobs)
+            for job in jobs:
+                reference_number = job.get("referenznummer")
+                if not isinstance(reference_number, str) or not reference_number:
+                    continue
+                if reference_number in seen_reference_numbers:
+                    continue
+                seen_reference_numbers.add(reference_number)
+                all_jobs.append(job)
 
     print(f"Retrieved {len(all_jobs)} search results in total.")
 
@@ -193,7 +203,10 @@ def main() -> None:
     clean_jobs = [clean_job(raw_job) for raw_job in job_details]
 
     geocoder = JobLocationGeocoder(delay_seconds=1.0)
-    clean_jobs = geocoder.enrich_jobs(clean_jobs)
+    clean_jobs, num_malformed_locations = geocoder.enrich_jobs(clean_jobs)
+
+    if num_malformed_locations:
+        print(f"Skipped {num_malformed_locations} malformed location entries.")
 
     clean_output_path = output_directory / "clean-jobs.json"
     save_json(clean_jobs, clean_output_path)

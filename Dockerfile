@@ -9,19 +9,20 @@ WORKDIR /app
 # Copy dependency file and install
 COPY requirements.txt .
 
+ARG INSTALL_DEV=false
 RUN python -m pip install --upgrade pip \
- && pip install --no-cache-dir flake8 pytest \
- && if [ -f requirements.txt ]; then pip install --no-cache-dir -r requirements.txt; fi
+ && pip install --no-cache-dir -r requirements.txt \
+ && if [ "$INSTALL_DEV" = "true" ]; then pip install --no-cache-dir black pytest; fi
 
 # Copy the rest of the repo
 COPY . .
 
-RUN chmod +x /app/entrypoint.sh
-
-
+ENV RUNNING_IN_DOCKER=1
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app
 
-CMD ["/app/entrypoint.sh"]
+EXPOSE 8000
+
+CMD ["sh", "/app/entrypoint.sh"]
 
 

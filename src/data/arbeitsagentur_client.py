@@ -45,10 +45,10 @@ class ArbeitsagenturClient:
         """Search for job advertisements."""
 
         if page_number < 1:
-            raise TypeError("page_number must be at least 1")
+            raise ValueError("page_number must be at least 1")
 
         if not 1 <= jobs_per_page <= 100:
-            raise TypeError("jobs_per_page must be between 1 and 100")
+            raise ValueError("jobs_per_page must be between 1 and 100")
 
         params: dict[str, str | int] = {
             self.KEYWORD_SEARCH_PARAM: keyword,
@@ -77,7 +77,7 @@ class ArbeitsagenturClient:
         """Retrieve the full details for one job advertisement."""
 
         if not reference_number:
-            raise TypeError("reference_number must not be empty")
+            raise ValueError("reference_number must not be empty")
 
         encoded_reference_number = base64.b64encode(
             reference_number.encode("utf-8")

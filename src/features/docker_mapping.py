@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import os
 import sqlite3
+import threading
+import webbrowser
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -10,20 +13,29 @@ import folium
 import pandas as pd
 
 
+def running_in_docker() -> bool:
+    return os.environ.get("RUNNING_IN_DOCKER") == "1"
+
 class JobMapBuilder:
     def __init__(
         self,
         db_path: str = "src/data/processed/job_market.sqlite3",
         table_name: str = "job_locations",
         output_file: str = "map.html",
-        host: str = "0.0.0.0",
+        host: str | None = None,
         port: int = 8000,
+        open_browser: bool | None = None,
     ) -> None:
+        in_docker = running_in_docker()
+
         self.db_path = Path(db_path)
         self.table_name = table_name
         self.output_file = Path(output_file)
-        self.host = host
+        self.host = host or ("0.0.0.0" if in_docker else "127.0.0.1")
         self.port = port
+        self.open_browser_flag = (
+            open_browser if open_browser is not None else not in_docker
+        )
 
     def load_data(self) -> pd.DataFrame:
         query = f"""
@@ -41,7 +53,6 @@ class JobMapBuilder:
 
         center_lat = df["latitude"].mean()
         center_lon = df["longitude"].mean()
-
         m = folium.Map(location=[center_lat, center_lon], zoom_start=6)
 
         for _, row in df.iterrows():
@@ -54,32 +65,57 @@ class JobMapBuilder:
 
     def save_map(self, m: folium.Map) -> Path:
         self.output_file.parent.mkdir(parents=True, exist_ok=True)
-        m.save(str(self.output_file))
+        html = m.get_root().render()
+
+        referrer_meta = (
+            '<meta name="referrer" content="strict-origin-when-cross-origin">'
+        )
+        if "<head>" in html:
+            html = html.replace("<head>", f"<head>{referrer_meta}", 1)
+        else:
+            html = referrer_meta + html
+
+        self.output_file.write_text(html, encoding="utf-8")
         return self.output_file
 
-    def build(self) -> Path:
-        df = self.load_data()
-        m = self.build_map(df)
-        return self.save_map(m)
-
-    def serve_forever(self) -> None:
+    def serve(self, block: bool) -> ThreadingHTTPServer:
         output_dir = self.output_file.resolve().parent
 
         class Handler(SimpleHTTPRequestHandler):
             def __init__(self, *args, **kwargs):
                 super().__init__(*args, directory=str(output_dir), **kwargs)
 
-        server = ThreadingHTTPServer((self.host, self.port), Handler)
-        print(
-            f"Serving map at http://{self.host}:"
-            f"{self.port}/{self.output_file.name}"
-        )
-        server.serve_forever()
+            def end_headers(self) -> None:
+                self.send_header(
+                    "Referrer-Policy", "strict-origin-when-cross-origin"
+                )
+                super().end_headers()
 
-    def run(self) -> None:
+        server = ThreadingHTTPServer((self.host, self.port), Handler)
+        url = f"http://{self.host}:{self.port}/{self.output_file.name}"
+        print(f"Serving map at {url}")
+
+        if self.open_browser_flag:
+            webbrowser.open(url)
+
+        if block:
+            server.serve_forever()
+        else:
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+
+        return server
+
+    def build(self) -> Path:
+        df = self.load_data()
+        m = self.build_map(df)
+        return self.save_map(m)
+
+    def run(self, block: bool | None = None) -> ThreadingHTTPServer:
         output_path = self.build()
         print(f"Map written to {output_path.resolve()}")
-        self.serve_forever()
+        should_block = block if block is not None else running_in_docker()
+        return self.serve(block=should_block)
 
 
 def main() -> None:
