@@ -39,10 +39,16 @@ class JobMapBuilder:
 
     def load_data(self) -> pd.DataFrame:
         query = f"""
-        SELECT reference_number, latitude, longitude
-        FROM {self.table_name}
-        WHERE latitude IS NOT NULL
-          AND longitude IS NOT NULL
+            SELECT
+                jl.reference_number,
+                jl.latitude,
+                jl.longitude,
+                j.title AS job
+            FROM {self.table_name} AS jl
+            JOIN jobs AS j ON jl.reference_number = j.reference_number
+            WHERE jl.latitude IS NOT NULL
+                AND jl.longitude IS NOT NULL
+                AND j.title IS NOT NULL
         """
         with sqlite3.connect(self.db_path) as conn:
             return pd.read_sql_query(query, conn)
@@ -55,10 +61,22 @@ class JobMapBuilder:
         center_lon = df["longitude"].mean()
         m = folium.Map(location=[center_lat, center_lon], zoom_start=6)
 
+        palette = [
+            "red", "blue", "green", "purple", "orange",
+            "darkred", "lightred", "beige", "darkblue", "darkgreen",
+            "cadetblue", "darkpurple", "pink", "lightblue",
+            "lightgreen", "gray", "lightgray",
+        ]
+
+        jobs = sorted(df["job"].fillna("Unknown").unique())
+        color_map = {job: palette[i % len(palette)] for i, job in enumerate(jobs)}
+
         for _, row in df.iterrows():
+            job = row["job"] if pd.notna(row["job"]) else "Unknown"
             folium.Marker(
                 location=[row["latitude"], row["longitude"]],
-                popup=str(row["reference_number"]),
+                popup=f"{row['reference_number']}<br>{job}",
+                icon=folium.Icon(color=color_map[job], icon="briefcase", prefix="fa"),
             ).add_to(m)
 
         return m
