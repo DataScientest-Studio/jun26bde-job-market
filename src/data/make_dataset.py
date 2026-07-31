@@ -130,7 +130,7 @@ def main() -> None:
                     keyword=keyword,
                     page_number=page_number,
                     jobs_per_page=jobs_per_page,
-                    published_since_days=30,  # override option
+                    published_since_days=90,  # override option
                 )
             except requests.RequestException as error:
                 print(f"Failed to retrieve search page {page_number}: {error}")
