@@ -1,8 +1,7 @@
 """Download a small raw sample from the Arbeitsagentur job-search API."""
 
-from __future__ import annotations
-
 import json
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -14,12 +13,19 @@ from src.data.arbeitsagentur_client import ArbeitsagenturClient
 from src.data.sqlite_loader import (
     load_clean_jobs_to_sqlite,
 )
-from src.features.geocoding_json import JobLocationGeocoder
+from src.data.job_location_geocoder import JobLocationGeocoder
 
 RAW_DATA_DIRECTORY = Path(__file__).resolve().parent / "raw" / "arbeitsagentur"
 
+KEYWORDS = ("Data Engineer", "Data Analyst")
+FIRST_PAGE = 1
+NUMBER_OF_PAGES = 3
+JOBS_PER_PAGE = 50
 
-def save_json(data: Any, target_path: Path) -> None:
+logger = logging.getLogger(__name__)
+
+
+def _save_json(data: Any, target_path: Path) -> None:
     """Write JSON-compatible data as UTF-8 JSON."""
 
     target_path.parent.mkdir(parents=True, exist_ok=True)
@@ -33,32 +39,38 @@ def save_json(data: Any, target_path: Path) -> None:
         )
 
 
-def clean_job(raw_job: dict[str, Any]) -> dict[str, Any]:
+def _clean_job(raw_job: dict[str, Any]) -> dict[str, Any]:
     """Convert one raw Arbeitsagentur job into our cleaner structure."""
 
     raw_locations = raw_job.get("stellenlokationen", [])
     clean_locations: list[dict[str, Any]] = []
 
-    if isinstance(raw_locations, list):
-        for raw_location in raw_locations:
-            if not isinstance(raw_location, dict):
-                continue
+    if not isinstance(raw_locations, list):
+        logger.warning(
+            "Ignoring malformed 'stellenlokationen' value: %r",
+            raw_locations,
+        )
+        raw_locations = []
 
-            raw_address = raw_location.get("adresse", {})
+    for raw_location in raw_locations:
+        if not isinstance(raw_location, dict):
+            continue
 
-            if not isinstance(raw_address, dict):
-                raw_address = {}
+        raw_address = raw_location.get("adresse", {})
 
-            clean_locations.append(
-                {
-                    "postal_code": raw_address.get("plz"),
-                    "city": raw_address.get("ort"),
-                    "region": raw_address.get("region"),
-                    "country": raw_address.get("land"),
-                    "latitude": raw_location.get("breite"),
-                    "longitude": raw_location.get("laenge"),
-                }
-            )
+        if not isinstance(raw_address, dict):
+            raw_address = {}
+
+        clean_locations.append(
+            {
+                "postal_code": raw_address.get("plz"),
+                "city": raw_address.get("ort"),
+                "region": raw_address.get("region"),
+                "country": raw_address.get("land"),
+                "latitude": raw_location.get("breite"),
+                "longitude": raw_location.get("laenge"),
+            }
+        )
 
     entry_period = raw_job.get("eintrittszeitraum", {})
     publication_period = raw_job.get("veroeffentlichungszeitraum", {})
@@ -98,87 +110,116 @@ def clean_job(raw_job: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def main() -> None:
-    arbeitsagentur_client = ArbeitsagenturClient()
-
-    keywords = ["Data Engineer", "Data Analyst"]
-    first_page = 1
-    number_of_pages = 3
-    jobs_per_page = 50
-
-    extraction_time = datetime.now(timezone.utc)
-    output_directory = RAW_DATA_DIRECTORY / extraction_time.strftime(
-        "%Y-%m-%dT%H-%M-%SZ"
-    )
-
-    all_jobs: list[dict[str, Any]] = []
+def _search_jobs(
+    client: ArbeitsagenturClient,
+    *,
+    keywords: tuple[str, ...],
+    first_page: int,
+    number_of_pages: int,
+    jobs_per_page: int,
+    output_directory: Path,
+) -> list[dict[str, Any]]:
+    job_summaries: list[dict[str, Any]] = []
     seen_reference_numbers: set[str] = set()
 
     for keyword in keywords:
+        keyword_directory = (
+            output_directory / "search-results" / keyword.lower().replace(" ", "-")
+        )
+
         for page_number in range(
             first_page,
             first_page + number_of_pages,
         ):
-            print(
-                f"Searching for {keyword!r}, "
-                f"page {page_number}, "
-                f"jobs per page {jobs_per_page}..."
+            logger.info(
+                "Searching for %r, page %d, jobs per page %d",
+                keyword,
+                page_number,
+                jobs_per_page,
             )
 
             try:
-                search_result = arbeitsagentur_client.search_jobs(
+                search_result = client.search_jobs(
                     keyword=keyword,
                     page_number=page_number,
                     jobs_per_page=jobs_per_page,
                 )
-            except requests.RequestException as error:
-                print(f"Failed to retrieve search page {page_number}: {error}")
+            except requests.RequestException:
+                logger.exception(
+                    "Failed to retrieve page %d for %r",
+                    page_number,
+                    keyword,
+                )
                 continue
 
-            search_output_path = output_directory / f"search-page-{page_number}.json"
-            save_json(search_result, search_output_path)
-
-            print(f"Raw search response saved to: {search_output_path}")
+            _save_json(
+                search_result,
+                keyword_directory / f"page-{page_number:03d}.json",
+            )
 
             jobs = search_result.get("ergebnisliste")
 
             if not isinstance(jobs, list):
-                print(f"Skipping page {page_number}: 'ergebnisliste' is not a list")
+                logger.warning(
+                    "Skipping page %d for %r: " "'ergebnisliste' is not a list",
+                    page_number,
+                    keyword,
+                )
                 continue
 
-            # all_jobs.extend(jobs)
             for job in jobs:
-                reference_number = job.get("referenznummer")
-                if not isinstance(reference_number, str) or not reference_number:
+                if not isinstance(job, dict):
+                    logger.warning(
+                        "Skipping malformed search-result entry: %r",
+                        job,
+                    )
                     continue
+
+                reference_number = job.get("referenznummer")
+
+                if not isinstance(reference_number, str) or not reference_number:
+                    logger.warning(
+                        "Skipping search result without a valid "
+                        "reference number: %r",
+                        job,
+                    )
+                    continue
+
                 if reference_number in seen_reference_numbers:
                     continue
+
                 seen_reference_numbers.add(reference_number)
-                all_jobs.append(job)
+                job_summaries.append(job)
 
-    print(f"Retrieved {len(all_jobs)} search results in total.")
+    return job_summaries
 
+
+def _retrieve_job_details(
+    client: ArbeitsagenturClient,
+    job_summaries: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
     job_details: list[dict[str, Any]] = []
-    failed_jobs: list[dict[str, str]] = []
+    failures: list[dict[str, str]] = []
 
-    for job_number, job in enumerate(all_jobs, start=1):
-        reference_number = job.get("referenznummer")
+    for job_number, job_summary in enumerate(job_summaries, start=1):
+        reference_number = job_summary["referenznummer"]
 
-        if not isinstance(reference_number, str) or not reference_number:
-            print(f"Skipping job {job_number}: missing or invalid referenznummer")
-            continue
-
-        print(
-            f"Retrieving details for"
-            f"{job_number}/{len(all_jobs)}: {reference_number}"
+        logger.info(
+            "Retrieving details for %d/%d: %s",
+            job_number,
+            len(job_summaries),
+            reference_number,
         )
 
         try:
-            details = arbeitsagentur_client.get_job_details(reference_number)
+            details = client.get_job_details(reference_number)
         except requests.RequestException as error:
-            print(f"Failed to retrieve {reference_number}: {error}")
-
-            failed_jobs.append(
+            logger.warning(
+                "Failed to retrieve details for %s: %s",
+                reference_number,
+                error,
+            )
+            failures.append(
                 {
                     "referenznummer": reference_number,
                     "error": str(error),
@@ -188,39 +229,74 @@ def main() -> None:
 
         job_details.append(details)
 
+    return job_details, failures
+
+
+def main() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(levelname)s %(name)s: %(message)s",
+    )
+
+    extraction_time = datetime.now(timezone.utc)
+    output_directory = RAW_DATA_DIRECTORY / extraction_time.strftime(
+        "%Y-%m-%dT%H-%M-%SZ"
+    )
+
+    client = ArbeitsagenturClient()
+
+    job_summaries = _search_jobs(
+        client,
+        keywords=KEYWORDS,
+        first_page=FIRST_PAGE,
+        number_of_pages=NUMBER_OF_PAGES,
+        jobs_per_page=JOBS_PER_PAGE,
+        output_directory=output_directory,
+    )
+
+    logger.info(
+        "Retrieved %d unique search results",
+        len(job_summaries),
+    )
+
+    job_details, failed_jobs = _retrieve_job_details(
+        client,
+        job_summaries,
+    )
+
     details_output_path = output_directory / "job-details.json"
-    save_json(job_details, details_output_path)
-
     failures_output_path = output_directory / "job-detail-failures.json"
-    save_json(failed_jobs, failures_output_path)
 
-    clean_jobs = [clean_job(raw_job) for raw_job in job_details]
+    _save_json(job_details, details_output_path)
+    _save_json(failed_jobs, failures_output_path)
 
-    geocoder = JobLocationGeocoder(delay_seconds=1.0)
-    clean_jobs, num_malformed_locations = geocoder.enrich_jobs(clean_jobs)
+    clean_jobs = [_clean_job(job) for job in job_details]
 
-    if num_malformed_locations:
-        print(f"Skipped {num_malformed_locations} malformed location entries.")
+    geocoder = JobLocationGeocoder()
+    clean_jobs, num_malformed_locations = geocoder.enrich_jobs_with_geocoding(
+        clean_jobs
+    )
 
     clean_output_path = output_directory / "clean-jobs.json"
-    save_json(clean_jobs, clean_output_path)
+    _save_json(clean_jobs, clean_output_path)
 
     num_loaded_jobs, num_skipped_jobs = load_clean_jobs_to_sqlite(
         jobs=clean_jobs,
     )
 
-    print(f"Successfully got {len(job_details)}/{len(all_jobs)} job details.")
-    print(f"Raw job details saved to: {details_output_path}")
-    print(f"Clean job data saved to: {clean_output_path}")
-    print(f"SQLite database updated: {DATABASE_PATH}")
-    print(f"# Jobs loaded into SQLite: {num_loaded_jobs}")
-    print(f"# Jobs skipped during database loading: {num_skipped_jobs}")
-
-    if failed_jobs:
-        print(
-            f"{len(failed_jobs)} detail requests failed. "
-            f"Failures saved to: {failures_output_path}"
-        )
+    logger.info(
+        "Pipeline finished: %d details retrieved, "
+        "%d detail requests failed, %d jobs loaded, "
+        "%d jobs skipped, %d malformed locations skipped",
+        len(job_details),
+        len(failed_jobs),
+        num_loaded_jobs,
+        num_skipped_jobs,
+        num_malformed_locations,
+    )
+    logger.info("Raw job details saved to %s", details_output_path)
+    logger.info("Clean job data saved to %s", clean_output_path)
+    logger.info("SQLite database updated: %s", DATABASE_PATH)
 
 
 if __name__ == "__main__":

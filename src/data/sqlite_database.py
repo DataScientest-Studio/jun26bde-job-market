@@ -17,13 +17,14 @@ def get_database_connection() -> Generator[sqlite3.Connection, None, None]:
     if not DATABASE_PATH.is_file():
         raise DatabaseUnavailableError(f"Job database does not exist: {DATABASE_PATH}")
 
-    try:
-        with sqlite3.connect(DATABASE_PATH) as connection:
-            connection.row_factory = sqlite3.Row
-            try:
-                yield connection
-            finally:
-                connection.close()
+    connection = None
 
+    try:
+        connection = sqlite3.connect(DATABASE_PATH)
+        connection.row_factory = sqlite3.Row
+        yield connection
     except sqlite3.Error as error:
         raise DatabaseUnavailableError("Could not access the job database.") from error
+    finally:
+        if connection is not None:
+            connection.close()
