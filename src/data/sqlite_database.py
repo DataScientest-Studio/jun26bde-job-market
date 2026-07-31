@@ -2,12 +2,9 @@
 
 from collections.abc import Generator
 from contextlib import contextmanager
-from pathlib import Path
 import sqlite3
 
-DATABASE_PATH = (
-    Path(__file__).resolve().parents[2] / "data" / "processed" / "job_market.sqlite3"
-)
+from src.config.settings import DATABASE_PATH
 
 
 class DatabaseUnavailableError(Exception):

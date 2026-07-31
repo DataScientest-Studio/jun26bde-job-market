@@ -12,6 +12,8 @@ from pathlib import Path
 import folium
 import pandas as pd
 
+from src.config.settings import DATABASE_PATH
+
 
 def running_in_docker() -> bool:
     return os.environ.get("RUNNING_IN_DOCKER") == "1"
@@ -19,7 +21,7 @@ def running_in_docker() -> bool:
 class JobMapBuilder:
     def __init__(
         self,
-        db_path: str = "src/data/processed/job_market.sqlite3",
+        db_path: str = DATABASE_PATH,
         table_name: str = "job_locations",
         output_file: str = "map.html",
         host: str | None = None,

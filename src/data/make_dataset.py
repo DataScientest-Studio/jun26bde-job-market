@@ -9,9 +9,9 @@ from typing import Any
 
 import requests
 
+from src.config.settings import DATABASE_PATH
 from src.data.arbeitsagentur_client import ArbeitsagenturClient
 from src.data.sqlite_loader import (
-    DEFAULT_DATABASE_PATH,
     load_clean_jobs_to_sqlite,
 )
 from src.features.geocoding_json import JobLocationGeocoder
@@ -135,9 +135,7 @@ def main() -> None:
                 print(f"Failed to retrieve search page {page_number}: {error}")
                 continue
 
-            search_output_path = (
-                output_directory / f"search-page-{page_number}.json"
-            )
+            search_output_path = output_directory / f"search-page-{page_number}.json"
             save_json(search_result, search_output_path)
 
             print(f"Raw search response saved to: {search_output_path}")
@@ -145,12 +143,10 @@ def main() -> None:
             jobs = search_result.get("ergebnisliste")
 
             if not isinstance(jobs, list):
-                print(
-                    f"Skipping page {page_number}: 'ergebnisliste' is not a list"
-                )
+                print(f"Skipping page {page_number}: 'ergebnisliste' is not a list")
                 continue
 
-            #all_jobs.extend(jobs)
+            # all_jobs.extend(jobs)
             for job in jobs:
                 reference_number = job.get("referenznummer")
                 if not isinstance(reference_number, str) or not reference_number:
@@ -169,9 +165,7 @@ def main() -> None:
         reference_number = job.get("referenznummer")
 
         if not isinstance(reference_number, str) or not reference_number:
-            print(
-                f"Skipping job {job_number}: missing or invalid referenznummer"
-            )
+            print(f"Skipping job {job_number}: missing or invalid referenznummer")
             continue
 
         print(
@@ -215,12 +209,10 @@ def main() -> None:
         jobs=clean_jobs,
     )
 
-    print(
-        f"Successfully got {len(job_details)}/{len(all_jobs)} job details."
-    )
+    print(f"Successfully got {len(job_details)}/{len(all_jobs)} job details.")
     print(f"Raw job details saved to: {details_output_path}")
     print(f"Clean job data saved to: {clean_output_path}")
-    print(f"SQLite database updated: {DEFAULT_DATABASE_PATH}")
+    print(f"SQLite database updated: {DATABASE_PATH}")
     print(f"# Jobs loaded into SQLite: {num_loaded_jobs}")
     print(f"# Jobs skipped during database loading: {num_skipped_jobs}")
 

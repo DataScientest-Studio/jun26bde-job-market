@@ -8,13 +8,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-# region Constants
-
-DATA_DIRECTORY = Path(__file__).resolve().parent
-DEFAULT_DATABASE_PATH = DATA_DIRECTORY / "processed" / "job_market.sqlite3"
-
-# endregion
-
+from src.config.settings import DATABASE_PATH
 
 # region SQL statements
 
@@ -214,8 +208,8 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--database",
         type=Path,
-        default=DEFAULT_DATABASE_PATH,
-        help=(f"Path to the SQLite database. Default: {DEFAULT_DATABASE_PATH}"),
+        default=DATABASE_PATH,
+        help=(f"Path to the SQLite database. Default: {DATABASE_PATH}"),
     )
 
     return parser.parse_args()
@@ -332,7 +326,7 @@ def load_jobs(
 
 def load_clean_jobs_to_sqlite(
     jobs: list[dict[str, Any]],
-    database_path: Path = DEFAULT_DATABASE_PATH,
+    database_path: Path = DATABASE_PATH,
 ) -> tuple[int, int]:
     """Create the SQLite database and load cleaned jobs into it."""
 
@@ -352,6 +346,7 @@ def load_clean_jobs_to_sqlite(
     except sqlite3.Error as error:
         print(f"Database error, aborting load: {error}")
         raise
+
 
 def main() -> None:
     """Load a clean-jobs JSON file into SQLite."""
