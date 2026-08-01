@@ -2,6 +2,10 @@
 
 from pathlib import Path
 
+FASTAPI_URL = "http://127.0.0.1:8000"
+
+FRONTEND_PORT = 8050
+
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DATA_DIRECTORY = PROJECT_ROOT / "data"
 

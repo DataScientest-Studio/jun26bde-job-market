@@ -18,7 +18,14 @@ SELECT
 FROM job_locations
 JOIN jobs USING (reference_number)
 WHERE job_locations.latitude IS NOT NULL
-  AND job_locations.longitude IS NOT NULL
+    AND job_locations.longitude IS NOT NULL
+    AND (
+        ? IS NULL
+        OR LOWER(jobs.title) LIKE LOWER(?)
+        OR LOWER(jobs.occupation) LIKE LOWER(?)
+        OR LOWER(jobs.company) LIKE LOWER(?)
+        OR LOWER(jobs.description) LIKE LOWER(?)
+    )
 """
 
 INITIAL_MAP_ZOOM = 6
@@ -31,9 +38,21 @@ def _escape_value(value: object, fallback: str) -> str:
     return escape(str(value))
 
 
-def _load_job_coordinates() -> pd.DataFrame:
+def _load_job_coordinates(search: str | None = None) -> pd.DataFrame:
+    search_pattern = f"%{search}%" if search else None
+    parameters = (
+        search,
+        search_pattern,
+        search_pattern,
+        search_pattern,
+        search_pattern,
+    )
     with get_database_connection() as connection:
-        return pd.read_sql_query(GET_JOB_COORDINATES_SQL, connection)
+        return pd.read_sql_query(
+            GET_JOB_COORDINATES_SQL,
+            connection,
+            params=parameters,
+        )
 
 
 def _build_job_map(data: pd.DataFrame) -> folium.Map:
@@ -63,7 +82,7 @@ def _build_job_map(data: pd.DataFrame) -> folium.Map:
     return job_map
 
 
-def build_job_map_html() -> str:
-    data = _load_job_coordinates()
+def build_job_map_html(search: str | None = None) -> str:
+    data = _load_job_coordinates(search)
     job_map = _build_job_map(data)
     return job_map.get_root().render()

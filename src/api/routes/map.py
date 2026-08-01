@@ -1,6 +1,6 @@
 """API route for displaying job locations on an interactive map."""
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import HTMLResponse
 
 from src.data.sqlite_database import DatabaseUnavailableError
@@ -22,9 +22,14 @@ router = APIRouter(
         503: {"description": "The job database is unavailable"},
     },
 )
-def get_map() -> HTMLResponse:
+def get_map(
+    search: str | None = Query(
+        default=None,
+        description="Search in job title, occupation, company, and description",
+    ),
+) -> HTMLResponse:
     try:
-        return HTMLResponse(content=build_job_map_html())
+        return HTMLResponse(content=build_job_map_html(search=search))
     except DatabaseUnavailableError as error:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
