@@ -24,6 +24,13 @@ WHERE job_locations.latitude IS NOT NULL
 INITIAL_MAP_ZOOM = 6
 
 
+def _escape_value(value: object, fallback: str) -> str:
+    if pd.isna(value):
+        return fallback
+
+    return escape(str(value))
+
+
 def _load_job_coordinates() -> pd.DataFrame:
     with get_database_connection() as connection:
         return pd.read_sql_query(GET_JOB_COORDINATES_SQL, connection)
@@ -42,9 +49,9 @@ def _build_job_map(data: pd.DataFrame) -> folium.Map:
     )
 
     for row in data.itertuples(index=False):
-        title = escape(row.title or "Unknown title")
-        company = escape(row.company or "Unknown company")
-        city = escape(row.city or "Unknown city")
+        title = _escape_value(row.title, "Unknown title")
+        company = _escape_value(row.company, "Unknown company")
+        city = _escape_value(row.city, "Unknown city")
 
         popup_html = f"<strong>{title}</strong><br>" f"{company}<br>" f"{city}"
 
