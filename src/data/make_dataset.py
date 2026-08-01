@@ -8,19 +8,19 @@ from typing import Any
 
 import requests
 
-from src.config.settings import DATABASE_PATH
+from src.config.settings import (
+    DATABASE_PATH,
+    FIRST_PAGE,
+    JOBS_PER_PAGE,
+    KEYWORDS,
+    NUMBER_OF_PAGES,
+    RAW_DATA_DIRECTORY,
+)
 from src.data.arbeitsagentur_client import ArbeitsagenturClient
 from src.data.sqlite_loader import (
     load_clean_jobs_to_sqlite,
 )
 from src.data.job_location_geocoder import JobLocationGeocoder
-
-RAW_DATA_DIRECTORY = Path(__file__).resolve().parent / "raw" / "arbeitsagentur"
-
-KEYWORDS = ("Data Engineer", "Data Analyst")
-FIRST_PAGE = 1
-NUMBER_OF_PAGES = 3
-JOBS_PER_PAGE = 50
 
 logger = logging.getLogger(__name__)
 
