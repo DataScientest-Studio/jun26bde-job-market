@@ -4,9 +4,6 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: job-market
-    environment:
-      PYTHONUNBUFFERED: "1"
-      PYTHONPATH: /app
     ports:
       - "127.0.0.1:8000:8000"
       - "127.0.0.1:8050:8050"

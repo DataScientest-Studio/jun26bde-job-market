@@ -350,4 +350,11 @@ def search_jobs(
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=FRONTEND_PORT)
+    # 0.0.0.0 tells Uvicorn to listen on all network interfaces.
+    # Without this, it would listen only on 127.0.0.1 inside the container,
+    # and Docker could not forward requests from the browser.
+    app.run(
+        host="0.0.0.0",
+        port=FRONTEND_PORT,
+        debug=False,
+    )
