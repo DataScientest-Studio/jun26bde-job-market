@@ -62,7 +62,7 @@ python -m pip install --upgrade pip
 pip install -r requirements.txt
 ````
 
-### Create/Update DB with recent Jobs
+#### Create/Update DB with recent Jobs
 
 From the root of the project:
 ```sh
@@ -85,3 +85,18 @@ From the root of the project:
 ```sh
 python -m src.dashboard.app
 ```
+
+## How to use *with* Docker
+
+From the root of the project:
+```sh
+docker compose up
+````
+
+### Swagger (Backend)
+
+http://127.0.0.1:8000/docs
+
+### Frontend
+
+http://127.0.0.1:8050
