@@ -49,9 +49,13 @@
 Project is based on the [Cookiecutter Data Science project template](https://drivendata.github.io/cookiecutter-data-science/).
 #cookiecutterdatascience
 
-### Architecture
+## Architecture
+
+### High-Level Architecture
 
 ![High-Level Architecture](docs/images/high-level-architecture.png)
+
+### Deployment
 
 ![Deployment](docs/images/deployment.png)
 
