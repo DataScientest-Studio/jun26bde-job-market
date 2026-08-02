@@ -53,11 +53,11 @@ Project is based on the [Cookiecutter Data Science project template](https://dri
 
 ### Project Overview
 
-![High-Level Architecture](docs/images/project-overviewe.png)
+![Project Overview](docs/images/project-overview.png)
 
-### Deployment
+### Docker Deployment
 
-![Deployment](docs/images/docker-deployment.png)
+![Docker Deployment](docs/images/docker-deployment.png)
 
 ## How to use *without* Docker
 
