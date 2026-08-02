@@ -51,7 +51,9 @@ Project is based on the [Cookiecutter Data Science project template](https://dri
 
 ### Architecture
 
-![High-Level Architecture](docs/images/High%20Level%20Architecture.png)
+![High-Level Architecture](docs/images/high-level-architecture.png)
+
+![Deployment](docs/images/deployment.png)
 
 ## How to use *without* Docker
 
