@@ -59,54 +59,61 @@ Project is based on the [Cookiecutter Data Science project template](https://dri
 
 ![Docker Deployment](docs/images/docker-deployment.png)
 
-## How to use *without* Docker
+## Usage
 
-### Setup Python
+> **Note:** Every command in this section is assumed to be run from the project root directory.
 
-From the root of the project:
+### Without Docker
+
+#### Setup Python
 
 ```sh
 py -m venv .venv
 source .venv\bin\activate
 python -m pip install --upgrade pip
 pip install -r requirements.txt
-````
+```
 
-#### Create/Update DB with recent Jobs
+#### Create or update SQLite database with recent jobs
 
-From the root of the project:
 ```sh
 python -m src.data.make_dataset
-````
+```
 
-### Start API
+#### Start the backend API
 
-From the root of the project:
 ```sh
 python -m uvicorn src.api.main:api --reload
-````
+```
 
-### Test API
+#### Start the Dash frontend:
 
-You can explore and test the API at http://127.0.0.1:8000/docs.
-
-### Start Frontend
-From the root of the project:
 ```sh
 python -m src.dashboard.app
 ```
 
-## How to use *with* Docker
 
-From the root of the project:
+### With Docker
+
+Start the application:
+
 ```sh
-docker compose up
-````
+./docker_start.sh
+```
 
-### Swagger (Backend)
+If you see an error that the SQLite database does not exist, run:
+```sh
+./docker_build_db.sh
+```
 
-http://127.0.0.1:8000/docs
+Then start the application again:
 
-### Frontend
+```sh
+./docker_start.sh
+```
 
-http://127.0.0.1:8050
+### Open in your browser
+
+**Swagger (Backend):** http://127.0.0.1:8000/docs
+
+**Dash (Frontend):** http://127.0.0.1:8050

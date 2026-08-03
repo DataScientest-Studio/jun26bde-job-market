@@ -5,11 +5,13 @@ set -e
 
 DB_PATH="/app/data/processed/job_market.sqlite3"
 
-echo "Creating the dataset..."
-python -m src.data.make_dataset
-
 if [ ! -f "$DB_PATH" ]; then
-    echo "Expected SQLite database not found: $DB_PATH"
+    {
+        echo "ERROR: Expected SQLite database not found: $DB_PATH"
+        echo "Create it first with:"
+        echo "    ./docker_build_db.sh"
+    } >&2
+
     exit 1
 fi
 
