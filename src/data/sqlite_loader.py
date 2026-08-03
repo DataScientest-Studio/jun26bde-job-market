@@ -1,20 +1,13 @@
 """Load cleaned Arbeitsagentur job data into SQLite."""
 
-from __future__ import annotations
-
 import argparse
 import json
+import logging
 import sqlite3
 from pathlib import Path
 from typing import Any
 
-# region Constants
-
-DATA_DIRECTORY = Path(__file__).resolve().parent
-DEFAULT_DATABASE_PATH = DATA_DIRECTORY / "processed" / "job_market.sqlite3"
-
-# endregion
-
+from src.config.settings import DATABASE_PATH
 
 # region SQL statements
 
@@ -183,10 +176,10 @@ BOOLEAN_FIELDS = {
 # endregion
 
 
-# region Helper functions
+logger = logging.getLogger(__name__)
 
 
-def to_sqlite_boolean(value: Any) -> int | None:
+def _to_sqlite_boolean(value: Any) -> int | None:
     """Convert a JSON boolean into SQLite's integer representation."""
 
     if value is None:
@@ -198,7 +191,7 @@ def to_sqlite_boolean(value: Any) -> int | None:
     raise ValueError(f"Expected a boolean or null, received {value!r}")
 
 
-def parse_arguments() -> argparse.Namespace:
+def _parse_arguments() -> argparse.Namespace:
     """Parse command-line arguments."""
 
     parser = argparse.ArgumentParser(
@@ -214,17 +207,14 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--database",
         type=Path,
-        default=DEFAULT_DATABASE_PATH,
-        help=(f"Path to the SQLite database. Default: {DEFAULT_DATABASE_PATH}"),
+        default=DATABASE_PATH,
+        help=(f"Path to the SQLite database. Default: {DATABASE_PATH}"),
     )
 
     return parser.parse_args()
 
 
-# endregion
-
-
-def load_json(source_path: Path) -> list[dict[str, Any]]:
+def _load_json(source_path: Path) -> list[dict[str, Any]]:
     """Read and validate a clean-jobs JSON file."""
 
     with source_path.open("r", encoding="utf-8") as file:
@@ -237,7 +227,11 @@ def load_json(source_path: Path) -> list[dict[str, Any]]:
 
     for index, item in enumerate(data, start=1):
         if not isinstance(item, dict):
-            print(f"Skipping entry {index}: not a JSON object")
+            logger.warning(
+                "Skipping entry %d: expected a JSON object, received %r",
+                index,
+                item,
+            )
             continue
 
         jobs.append(item)
@@ -245,7 +239,7 @@ def load_json(source_path: Path) -> list[dict[str, Any]]:
     return jobs
 
 
-def prepare_job(job: dict[str, Any]) -> dict[str, Any]:
+def _prepare_job(job: dict[str, Any]) -> dict[str, Any]:
     """Prepare one cleaned job for insertion into SQLite."""
 
     reference_number = job.get("reference_number")
@@ -258,12 +252,12 @@ def prepare_job(job: dict[str, Any]) -> dict[str, Any]:
     prepared_job = {key: value for key, value in job.items() if key != "locations"}
 
     for field in BOOLEAN_FIELDS:
-        prepared_job[field] = to_sqlite_boolean(job.get(field))
+        prepared_job[field] = _to_sqlite_boolean(job.get(field))
 
     return prepared_job
 
 
-def create_schema(connection: sqlite3.Connection) -> None:
+def _create_schema(connection: sqlite3.Connection) -> None:
     """Create the database tables and indexes."""
 
     connection.execute(CREATE_JOBS_TABLE_SQL)
@@ -271,7 +265,7 @@ def create_schema(connection: sqlite3.Connection) -> None:
     connection.execute(CREATE_LOCATION_INDEX_SQL)
 
 
-def load_jobs(
+def _load_jobs(
     connection: sqlite3.Connection,
     jobs: list[dict[str, Any]],
 ) -> tuple[int, int]:
@@ -282,81 +276,86 @@ def load_jobs(
 
     for job_number, job in enumerate(jobs, start=1):
         try:
-            prepared_job = prepare_job(job)
-            reference_number = prepared_job["reference_number"]
+            # Commit all changes for this job together, or roll them all back.
+            with connection:
+                prepared_job = _prepare_job(job)
+                reference_number = prepared_job["reference_number"]
 
-            connection.execute(UPSERT_JOB_SQL, prepared_job)
-
-            # Locations in the current JSON file replace previously
-            # stored ones.
-            connection.execute(
-                """
-                DELETE FROM job_locations
-                WHERE reference_number = ?
-                """,
-                (reference_number,),
-            )
-
-            locations = job.get("locations", [])
-
-            if locations is None:
-                locations = []
-
-            if not isinstance(locations, list):
-                raise TypeError("'locations' must be a list")
-
-            for location in locations:
-                if not isinstance(location, dict):
-                    raise TypeError("Each location must be a JSON object")
+                connection.execute(UPSERT_JOB_SQL, prepared_job)
 
                 connection.execute(
-                    INSERT_LOCATION_SQL,
-                    {
-                        "reference_number": reference_number,
-                        "postal_code": location.get("postal_code"),
-                        "city": location.get("city"),
-                        "region": location.get("region"),
-                        "country": location.get("country"),
-                        "latitude": location.get("latitude"),
-                        "longitude": location.get("longitude"),
-                    },
+                    """
+                    DELETE FROM job_locations
+                    WHERE reference_number = ?
+                    """,
+                    (reference_number,),
                 )
+
+                locations = job.get("locations", [])
+
+                if locations is None:
+                    locations = []
+
+                if not isinstance(locations, list):
+                    raise TypeError("'locations' must be a list")
+
+                for location in locations:
+                    if not isinstance(location, dict):
+                        raise TypeError("Each location must be a JSON object")
+
+                    connection.execute(
+                        INSERT_LOCATION_SQL,
+                        {
+                            "reference_number": reference_number,
+                            "postal_code": location.get("postal_code"),
+                            "city": location.get("city"),
+                            "region": location.get("region"),
+                            "country": location.get("country"),
+                            "latitude": location.get("latitude"),
+                            "longitude": location.get("longitude"),
+                        },
+                    )
+
             num_loaded_jobs += 1
 
-        except (ValueError, TypeError, sqlite3.Error) as error:
+        except (ValueError, TypeError, sqlite3.IntegrityError) as error:
             num_skipped_jobs += 1
-            print(f"Skipping job {job_number}: {error}")
+            logger.warning(
+                "Skipping job %d: %s",
+                job_number,
+                error,
+            )
 
     return num_loaded_jobs, num_skipped_jobs
 
 
 def load_clean_jobs_to_sqlite(
     jobs: list[dict[str, Any]],
-    database_path: Path = DEFAULT_DATABASE_PATH,
+    database_path: Path = DATABASE_PATH,
 ) -> tuple[int, int]:
     """Create the SQLite database and load cleaned jobs into it."""
 
     database_path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        with sqlite3.connect(database_path, isolation_level=None) as connection:
-            connection.execute("PRAGMA foreign_keys = ON")
 
-            create_schema(connection)
+    with sqlite3.connect(database_path) as connection:
+        connection.execute("PRAGMA foreign_keys = ON")
+        _create_schema(connection)
 
-            num_loaded_jobs, num_skipped_jobs = load_jobs(
-                connection=connection,
-                jobs=jobs,
-            )
+        return _load_jobs(
+            connection=connection,
+            jobs=jobs,
+        )
 
-            return num_loaded_jobs, num_skipped_jobs
-    except sqlite3.Error as error:
-        print(f"Database error, aborting load: {error}")
-        raise
 
 def main() -> None:
     """Load a clean-jobs JSON file into SQLite."""
 
-    arguments = parse_arguments()
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(levelname)s %(name)s: %(message)s",
+    )
+
+    arguments = _parse_arguments()
 
     source_path: Path = arguments.source
     database_path: Path = arguments.database
@@ -364,20 +363,17 @@ def main() -> None:
     if not source_path.is_file():
         raise FileNotFoundError(f"JSON file not found: {source_path}")
 
-    database_path.parent.mkdir(parents=True, exist_ok=True)
+    jobs = _load_json(source_path)
 
-    jobs = load_json(source_path)
+    loaded_jobs, skipped_jobs = load_clean_jobs_to_sqlite(
+        jobs=jobs,
+        database_path=database_path,
+    )
 
-    with sqlite3.connect(database_path, isolation_level=None) as connection:
-        connection.execute("PRAGMA foreign_keys = ON")
-        create_schema(connection)
-
-        loaded_jobs, skipped_jobs = load_jobs(connection, jobs)
-
-    print(f"Source file: {source_path}")
-    print(f"Database: {database_path}")
-    print(f"Loaded jobs: {loaded_jobs}")
-    print(f"Skipped jobs: {skipped_jobs}")
+    logger.info("Source file: %s", source_path)
+    logger.info("Database: %s", database_path)
+    logger.info("Loaded jobs: %d", loaded_jobs)
+    logger.info("Skipped jobs: %d", skipped_jobs)
 
 
 if __name__ == "__main__":

@@ -32,10 +32,34 @@ router = APIRouter(
 # Retrieve summary information for all stored jobs.
 GET_ALL_JOBS_SQL = """
 SELECT
-    reference_number,
-    title,
-    company,
-    occupation
+    jobs.reference_number,
+    jobs.title,
+    jobs.company,
+    jobs.occupation,
+    jobs.salary_min,
+    jobs.salary_max,
+    jobs.salary_period,
+    (
+        SELECT city
+        FROM job_locations
+        WHERE job_locations.reference_number = jobs.reference_number
+        ORDER BY id
+        LIMIT 1
+    ) AS city,
+    (
+        SELECT latitude
+        FROM job_locations
+        WHERE job_locations.reference_number = jobs.reference_number
+        ORDER BY id
+        LIMIT 1
+    ) AS latitude,
+    (
+        SELECT longitude
+        FROM job_locations
+        WHERE job_locations.reference_number = jobs.reference_number
+        ORDER BY id
+        LIMIT 1
+    ) AS longitude
 FROM jobs
 """
 
@@ -97,6 +121,12 @@ class JobModel(BaseModel):
     title: str
     company: str | None = None
     occupation: str | None = None
+    city: str | None = None
+    salary_min: float | None = None
+    salary_max: float | None = None
+    salary_period: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
 
 
 class JobLocationModel(BaseModel):
@@ -155,6 +185,11 @@ class JobDetailModel(JobModel):
     },
 )
 def get_jobs(
+    keyword: str | None = Query(
+        default=None,
+        description="Keyword contained in the job title or occupation",
+        examples=["Data Engineer"],
+    ),
     limit: int = Query(
         default=20,
         ge=1,
@@ -218,6 +253,16 @@ def get_jobs(
 
     query_conditions = []
     query_parameters = []
+
+    if keyword is not None:
+        query_conditions.append("""
+            (
+                LOWER(title) LIKE LOWER(?)
+                OR LOWER(occupation) LIKE LOWER(?)
+            )
+            """)
+        keyword_pattern = f"%{keyword}%"
+        query_parameters.extend([keyword_pattern, keyword_pattern])
 
     if city is not None:
         query_conditions.append("""

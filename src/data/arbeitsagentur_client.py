@@ -1,7 +1,5 @@
 """HTTP client for the Arbeitsagentur job-search interface."""
 
-from __future__ import annotations
-
 import base64
 from typing import Any
 

@@ -1,4 +1,12 @@
-# HTTP client for accessing external APIs (at least 2.32 but less than 3 for better stability)
-requests>=2.32,<3
+dash>=4.4,<5.0
 fastapi>=0.115,<1.0
+folium>=0.20,<1.0
+geopy>=2.4,<3.0
+pandas>=2.2,<4.0
+pydantic>=2.10,<3.0
+requests>=2.32,<3.0
 uvicorn>=0.35,<1.0
+
+# Development and testing
+flake8>=7,<8
+pytest>=8,<9

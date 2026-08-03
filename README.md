@@ -49,6 +49,16 @@
 Project is based on the [Cookiecutter Data Science project template](https://drivendata.github.io/cookiecutter-data-science/).
 #cookiecutterdatascience
 
+## Architecture
+
+### Project Overview
+
+![Project Overview](docs/images/project-overview.png)
+
+### Docker Deployment
+
+![Docker Deployment](docs/images/docker-deployment.png)
+
 ## How to use *without* Docker
 
 ### Setup Python
@@ -62,7 +72,7 @@ python -m pip install --upgrade pip
 pip install -r requirements.txt
 ````
 
-### Create/Update DB with recent Jobs
+#### Create/Update DB with recent Jobs
 
 From the root of the project:
 ```sh
@@ -79,3 +89,24 @@ python -m uvicorn src.api.main:api --reload
 ### Test API
 
 You can explore and test the API at http://127.0.0.1:8000/docs.
+
+### Start Frontend
+From the root of the project:
+```sh
+python -m src.dashboard.app
+```
+
+## How to use *with* Docker
+
+From the root of the project:
+```sh
+docker compose up
+````
+
+### Swagger (Backend)
+
+http://127.0.0.1:8000/docs
+
+### Frontend
+
+http://127.0.0.1:8050

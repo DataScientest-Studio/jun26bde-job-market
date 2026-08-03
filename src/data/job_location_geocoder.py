@@ -1,49 +1,53 @@
-from __future__ import annotations
-
-import time
+import logging
 from typing import Any
 
-from geopy.exc import GeopyError
 from geopy.extra.rate_limiter import RateLimiter
 from geopy.geocoders import Nominatim
+
+GEOPY_USER_AGENT = "job-market-mapper"
+GEOPY_DELAY_SECONDS = 1.0
+GEOPY_MAX_RETRIES = 2
+GEOPY_ERROR_WAIT_SECONDS = 5.0
+GEOPY_SWALLOW_EXCEPTIONS = True
+GEOPY_RETURN_VALUE_ON_EXCEPTION = None
+
+logger = logging.getLogger(__name__)
 
 
 class JobLocationGeocoder:
     def __init__(
         self,
-        user_agent: str = "job-market-mapper",
-        delay_seconds: float = 1.0,
-        max_retries: int = 2,
-        error_wait_seconds: float = 5.0,
+        delay_seconds: float = GEOPY_DELAY_SECONDS,
+        max_retries: int = GEOPY_MAX_RETRIES,
+        error_wait_seconds: float = GEOPY_ERROR_WAIT_SECONDS,
     ) -> None:
-        self.geolocator = Nominatim(user_agent=user_agent)
-        self.delay_seconds = delay_seconds
+        self.geolocator = Nominatim(user_agent=GEOPY_USER_AGENT)
         self._geocode = RateLimiter(
             self.geolocator.geocode,
             min_delay_seconds=delay_seconds,
             max_retries=max_retries,
             error_wait_seconds=error_wait_seconds,
-            swallow_exceptions=True,
-            return_value_on_exception=None,
+            swallow_exceptions=GEOPY_SWALLOW_EXCEPTIONS,
+            return_value_on_exception=GEOPY_RETURN_VALUE_ON_EXCEPTION,
         )
         self._cache: dict[str, tuple[float | None, float | None]] = {}
 
     @staticmethod
-    def _clean_part(value: Any) -> str | None:
+    def _normalize_query_part(value: Any) -> str | None:
         if value is None:
             return None
         cleaned = str(value).strip()
         return cleaned or None
 
-    def geocode_location(
+    def _geocode_location(
         self,
         postal_code: Any = None,
         city: Any = None,
         country: Any = None,
     ) -> tuple[float | None, float | None]:
-        postal_code = self._clean_part(postal_code)
-        city = self._clean_part(city)
-        country = self._clean_part(country)
+        postal_code = self._normalize_query_part(postal_code)
+        city = self._normalize_query_part(city)
+        country = self._normalize_query_part(country)
 
         if not any([postal_code, city, country]):
             return None, None
@@ -55,25 +59,19 @@ class JobLocationGeocoder:
         if query in self._cache:
             return self._cache[query]
 
-        try:
-            location = self.geolocator.geocode(query, exactly_one=True)
-            time.sleep(self.delay_seconds)
+        location = self._geocode(query, exactly_one=True)
 
-            if location:
-                result = (location.latitude, location.longitude)
-            else:
+        if location is not None:
+            result = (location.latitude, location.longitude)
+        else:
+            logger.warning("Geocoding returned no result for %r", query)
+            result = (None, None)
+        self._cache[query] = result
+        return result
 
-                print(f"Geocoding returned no result for '{query}'")
-                result = (None, None)
-            self._cache[query] = result
-            return result
-        except GeopyError as error:
-            print(f"Geocoding failed for '{query}': {error}")
-
-        self._cache[query] = (None, None)
-        return None, None
-
-    def enrich_location(self, location: dict[str, Any]) -> dict[str, Any]:
+    def _enrich_location_with_geocoding(
+        self, location: dict[str, Any]
+    ) -> dict[str, Any]:
         latitude = location.get("latitude")
         longitude = location.get("longitude")
 
@@ -81,7 +79,7 @@ class JobLocationGeocoder:
             location["coordinates_source"] = "source"
             return location
 
-        lat, lon = self.geocode_location(
+        lat, lon = self._geocode_location(
             postal_code=location.get("postal_code"),
             city=location.get("city"),
             country=location.get("country"),
@@ -96,41 +94,42 @@ class JobLocationGeocoder:
 
         return location
 
-    def enrich_job(self, job: dict[str, Any]) -> dict[str, Any]:
+    def _enrich_job_with_geocoding(
+        self, job: dict[str, Any]
+    ) -> tuple[dict[str, Any], int]:
         locations = job.get("locations", [])
 
         if not isinstance(locations, list):
-            return job
-        
+            logger.warning(
+                "Skipping malformed locations value (not a list): %r",
+                locations,
+            )
+            return job, 1
 
         enriched_locations = []
         num_malformed = 0
 
         for location in locations:
-            if not isinstance(location,dict):
-                print(f"Skipping malformed location entry (not a dict): {location!r}")
+            if not isinstance(location, dict):
+                logger.warning(
+                    "Skipping malformed location entry (not a dict): %r", location
+                )
                 num_malformed += 1
                 continue
-            enriched_locations.append(self.enrich_location(location))
+            enriched_locations.append(self._enrich_location_with_geocoding(location))
 
         job["locations"] = enriched_locations
         return job, num_malformed
 
-    def enrich_jobs(self, jobs: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
+    def enrich_jobs_with_geocoding(
+        self, jobs: list[dict[str, Any]]
+    ) -> tuple[list[dict[str, Any]], int]:
         enriched_jobs = []
         total_malformed = 0
 
         for job in jobs:
-            enriched_job, num_malformed = self.enrich_job(job)
+            enriched_job, num_malformed = self._enrich_job_with_geocoding(job)
             enriched_jobs.append(enriched_job)
             total_malformed += num_malformed
 
         return enriched_jobs, total_malformed
-
-
-def enrich_jobs_with_geocoding(
-    jobs: list[dict[str, Any]],
-    delay_seconds: float = 1.0,
-) -> tuple[list[dict[str, Any]], int]:
-    geocoder = JobLocationGeocoder(delay_seconds=delay_seconds)
-    return geocoder.enrich_jobs(jobs)
