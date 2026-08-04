@@ -1,55 +1,89 @@
 # Project 'Job-Market'
 
-## Project Organization
+## Architecture
+
+### Project Folder Structure
+
+#### Code
 
 ```text
-├── LICENSE
-├── README.md          <- The top-level README for developers using this project.
-├── data
-│   ├── external       <- Data from third party sources.
-│   ├── interim        <- Intermediate data that has been transformed.
-│   ├── processed      <- The final, canonical data sets for modeling.
-│   └── raw            <- The original, immutable data dump.
-│
-├── logs               <- Logs from training and predicting
-│
-├── models             <- Trained and serialized models, model predictions, or model summaries
-│
-├── notebooks          <- Jupyter notebooks. Naming convention is a number (for ordering),
-│                         the creator's initials, and a short `-` delimited description, e.g.
-│                         `1.0-jqp-initial-data-exploration`.
-│
-├── references         <- Data dictionaries, manuals, and all other explanatory materials.
-│
-├── reports            <- Generated analysis as HTML, PDF, LaTeX, etc.
-│   └── figures        <- Generated graphics and figures to be used in reporting
-│
-├── requirements.txt   <- The requirements file for reproducing the analysis environment, e.g.
-│                         generated with `pip freeze > requirements.txt`
-│
-├── src                <- Source code for use in this project.
-│   ├── __init__.py    <- Makes src a Python module
-│   │
-│   ├── data           <- Scripts to download or generate data
-│   │   └── make_dataset.py
-│   │
-│   ├── features       <- Scripts to turn raw data into features for modeling
-│   │   └── build_features.py
-│   │
-│   ├── models         <- Scripts to train models and then use trained models to make
-│   │   │                 predictions
-│   │   ├── predict_model.py
-│   │   └── train_model.py
-│   │
-│   ├── visualization  <- Scripts to create exploratory and results oriented visualizations
-│   │   └── visualize.py
-│   └── config         <- Describe the parameters used in train_model.py and predict_model.py
+src
+|
++---api
+|   |   main.py
+|   |       FastAPI entry point
+|   |
+|   +---routes
+|       |   health.py
+|       |       health-check endpoint to verify that the API is running
+|       |
+|       |   jobs.py
+|       |       endpoints for searching jobs and retrieving individual job details
+|       |
+|       |   statistics.py
+|       |       statistical endpoints for jobs, companies, locations, and home-office availability
+|
++---config
+|   |   settings.py
+|   |       shared configuration such as paths, ports, and API URLs
+|
++---dashboard
+|   |   app.py
+|   |       Dash frontend entry point
+|   |
+|   +---assets
+|       |   styles.css
+|       |       visual styling and layout of the Dash frontend
+|
++---data
+|   |   arbeitsagentur_client.py
+|   |       retrieves jobs from the Arbeitsagentur API
+|   |
+|   |   job_location_geocoder.py
+|   |       adds latitude and longitude coordinates to job locations
+|   |
+|   |   make_dataset.py
+|   |       runs the complete data pipeline: downloading, cleaning, geocoding, and saving jobs
+|   |
+|   |   sqlite_database.py
+|   |       helper for database access
+|   |
+|   |   sqlite_loader.py
+|   |       inserts or updates cleaned jobs in the SQLite database
+|
++---tests
+|   |   test_smoke.py
+|   |       ensures that the GitHub Actions test workflow does not fail
 ```
 
-Project is based on the [Cookiecutter Data Science project template](https://drivendata.github.io/cookiecutter-data-science/).
-#cookiecutterdatascience
+#### Generated Data
 
-## Architecture
+```text
+data
+|
++---processed
+|   |   job_market.sqlite3
+|   |       processed SQLite database used by the API and dashboard
+|
+\---raw
+    \---arbeitsagentur
+        \---<timestamp>
+            |   clean-jobs.json
+            |       cleaned and normalized job data
+            |
+            |   job-details.json
+            |       raw job details retrieved from the API
+            |
+            |   job-detail-failures.json
+            |       failed job-detail requests
+            |
+            \---search-results
+                +---<keyword>
+                |       page-001.json
+                |       raw search results for one keyword
+                |
+                \---...
+```
 
 ### Project Overview
 
@@ -117,3 +151,7 @@ Then start the application again:
 **Swagger (Backend):** http://127.0.0.1:8000/docs
 
 **Dash (Frontend):** http://127.0.0.1:8050
+
+##
+
+> Project is based on the [Cookiecutter Data Science project template](https://drivendata.github.io/cookiecutter-data-science/). #cookiecutterdatascience
