@@ -6,7 +6,7 @@ SWAGGER_URL="http://127.0.0.1:8000/docs"
 HEALTH_URL="http://127.0.0.1:8000/health"
 DASH_URL="http://127.0.0.1:8050"
 
-docker compose up -d
+docker compose up --build -d
 
 wait_for_url() {
     url="$1"
