@@ -1,16 +1,18 @@
 """
-API routes for reading job advertisements from the processed SQLite database.
+API routes for reading job advertisements from the job database.
 
 The endpoints in this module provide read-only access to jobs previously
 collected and processed by the data pipeline.
 """
 
+from datetime import date, datetime
 import logging
 
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
+from sqlalchemy import text
 
-from src.data.sqlite_database import (
+from src.data.database import (
     DatabaseUnavailableError,
     get_database_connection,
 )
@@ -64,7 +66,7 @@ FROM jobs
 """
 
 # Retrieve all available details for one job.
-GET_SINGLE_JOB_SQL = """
+GET_SINGLE_JOB_SQL = text("""
 SELECT
     reference_number,
     title,
@@ -91,11 +93,11 @@ SELECT
     partner_url,
     employer_customer_hash
 FROM jobs
-WHERE reference_number = ?
-"""
+WHERE reference_number = :reference_number
+""")
 
 # Retrieve all locations associated with one job.
-GET_JOB_LOCATIONS_SQL = """
+GET_JOB_LOCATIONS_SQL = text("""
 SELECT
     postal_code,
     city,
@@ -104,9 +106,9 @@ SELECT
     latitude,
     longitude
 FROM job_locations
-WHERE reference_number = ?
+WHERE reference_number = :reference_number
 ORDER BY id
-"""
+""")
 
 # endregion
 
@@ -155,10 +157,10 @@ class JobDetailModel(JobModel):
     salary_type: str | None = None
     salary_min: float | None = None
     salary_max: float | None = None
-    entry_date: str | None = None
-    publication_date: str | None = None
-    first_publication_date: str | None = None
-    modified_at: str | None = None
+    entry_date: date | None = None
+    publication_date: date | None = None
+    first_publication_date: date | None = None
+    modified_at: datetime | None = None
     external_url: str | None = None
     partner_name: str | None = None
     partner_url: str | None = None
@@ -252,17 +254,16 @@ def get_jobs(
     """
 
     query_conditions = []
-    query_parameters = []
+    query_parameters: dict[str, object] = {}
 
     if keyword is not None:
         query_conditions.append("""
             (
-                LOWER(title) LIKE LOWER(?)
-                OR LOWER(occupation) LIKE LOWER(?)
+                LOWER(title) LIKE LOWER(:keyword)
+                OR LOWER(occupation) LIKE LOWER(:keyword)
             )
             """)
-        keyword_pattern = f"%{keyword}%"
-        query_parameters.extend([keyword_pattern, keyword_pattern])
+        query_parameters["keyword"] = f"%{keyword}%"
 
     if city is not None:
         query_conditions.append("""
@@ -270,18 +271,18 @@ def get_jobs(
                 SELECT 1
                 FROM job_locations
                 WHERE job_locations.reference_number = jobs.reference_number
-                  AND LOWER(job_locations.city) = LOWER(?)
+                  AND LOWER(job_locations.city) = LOWER(:city)
             )
             """)
-        query_parameters.append(city)
+        query_parameters["city"] = city
 
     if company is not None:
-        query_conditions.append("LOWER(company) LIKE LOWER(?)")
-        query_parameters.append(f"%{company}%")
+        query_conditions.append("LOWER(company) LIKE LOWER(:company)")
+        query_parameters["company"] = f"%{company}%"
 
     if home_office is not None:
-        query_conditions.append("home_office_possible = ?")
-        query_parameters.append(home_office)
+        query_conditions.append("home_office_possible = :home_office")
+        query_parameters["home_office"] = home_office
 
     query = GET_ALL_JOBS_SQL
 
@@ -290,14 +291,15 @@ def get_jobs(
 
     query += """
     ORDER BY publication_date DESC, reference_number ASC
-    LIMIT ? OFFSET ?
+    LIMIT :limit OFFSET :offset
     """
 
-    query_parameters.extend([limit, offset])
+    query_parameters["limit"] = limit
+    query_parameters["offset"] = offset
 
     try:
         with get_database_connection() as connection:
-            rows = connection.execute(query, query_parameters).fetchall()
+            rows = connection.execute(text(query), query_parameters).fetchall()
     except DatabaseUnavailableError:
         logger.exception("Could not read the job database")
 
@@ -306,7 +308,7 @@ def get_jobs(
             detail="The job database is unavailable.",
         )
 
-    return [JobModel(**dict(row)) for row in rows]
+    return [JobModel(**row._mapping) for row in rows]
 
 
 @router.get(
@@ -334,7 +336,7 @@ def get_single_job(reference_number: str) -> JobDetailModel:
 
             job_row = connection.execute(
                 GET_SINGLE_JOB_SQL,
-                (reference_number,),
+                {"reference_number": reference_number},
             ).fetchone()
 
             if job_row is None:
@@ -345,7 +347,7 @@ def get_single_job(reference_number: str) -> JobDetailModel:
 
             location_rows = connection.execute(
                 GET_JOB_LOCATIONS_SQL,
-                (reference_number,),
+                {"reference_number": reference_number},
             ).fetchall()
 
     except DatabaseUnavailableError:
@@ -356,8 +358,8 @@ def get_single_job(reference_number: str) -> JobDetailModel:
             detail="The job database is unavailable.",
         )
 
-    job_data = dict(job_row)
-    job_data["locations"] = [JobLocationModel(**dict(row)) for row in location_rows]
+    job_data = dict(job_row._mapping)
+    job_data["locations"] = [JobLocationModel(**row._mapping) for row in location_rows]
 
     return JobDetailModel(**job_data)
 

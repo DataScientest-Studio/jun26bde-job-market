@@ -9,7 +9,6 @@ from typing import Any
 import requests
 
 from src.config.settings import (
-    DATABASE_PATH,
     FIRST_PAGE,
     JOBS_PER_PAGE,
     KEYWORDS,
@@ -17,8 +16,8 @@ from src.config.settings import (
     RAW_DATA_DIRECTORY,
 )
 from src.data.arbeitsagentur_client import ArbeitsagenturClient
-from src.data.sqlite_loader import (
-    load_clean_jobs_to_sqlite,
+from src.data.database_loader import (
+    load_clean_jobs_to_db,
 )
 from src.data.job_location_geocoder import JobLocationGeocoder
 
@@ -280,7 +279,7 @@ def main() -> None:
     clean_output_path = output_directory / "clean-jobs.json"
     _save_json(clean_jobs, clean_output_path)
 
-    num_loaded_jobs, num_skipped_jobs = load_clean_jobs_to_sqlite(
+    num_loaded_jobs, num_skipped_jobs = load_clean_jobs_to_db(
         jobs=clean_jobs,
     )
 
@@ -296,7 +295,6 @@ def main() -> None:
     )
     logger.info("Raw job details saved to %s", details_output_path)
     logger.info("Clean job data saved to %s", clean_output_path)
-    logger.info("SQLite database updated: %s", DATABASE_PATH)
 
 
 if __name__ == "__main__":

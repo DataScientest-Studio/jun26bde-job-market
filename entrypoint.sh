@@ -3,20 +3,6 @@
 #If any command fails, stop the script immediately.
 set -e
 
-DB_PATH="/app/data/processed/job_market.sqlite3"
-
-if [ ! -f "$DB_PATH" ]; then
-    {
-        echo "ERROR: Expected SQLite database not found: $DB_PATH"
-        echo "Create it first with:"
-        echo "    ./docker_build_db.sh"
-    } >&2
-
-    exit 1
-fi
-
-echo "SQLite database found: $DB_PATH"
-
 echo "Starting FastAPI on port 8000..."
 # 0.0.0.0 tells Uvicorn to listen on all network interfaces.
 # Without this, it would listen only on 127.0.0.1 inside the container,

@@ -1,17 +1,19 @@
-"""Load cleaned Arbeitsagentur job data into SQLite."""
+"""Load cleaned Arbeitsagentur job data into the job database."""
 
 import argparse
 import json
 import logging
-import sqlite3
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
+from sqlalchemy import Connection, text
+from sqlalchemy.exc import IntegrityError
 
-from src.config.settings import DATABASE_PATH
+from src.data.database import get_database_connection
 
 # region SQL statements
 
-CREATE_JOBS_TABLE_SQL = """
+CREATE_JOBS_TABLE_SQL = text("""
 CREATE TABLE IF NOT EXISTS jobs (
     reference_number TEXT PRIMARY KEY,
     title TEXT,
@@ -19,51 +21,50 @@ CREATE TABLE IF NOT EXISTS jobs (
     company TEXT,
     description TEXT,
     offer_type TEXT,
-    full_time INTEGER,
+    full_time BOOLEAN,
     contract_duration TEXT,
-    career_change_suitable INTEGER,
-    home_office_possible INTEGER,
-    temporary_employment INTEGER,
-    private_placement INTEGER,
+    career_change_suitable BOOLEAN,
+    home_office_possible BOOLEAN,
+    temporary_employment BOOLEAN,
+    private_placement BOOLEAN,
     salary_period TEXT,
     salary_type TEXT,
-    salary_min REAL,
-    salary_max REAL,
-    entry_date TEXT,
-    publication_date TEXT,
-    first_publication_date TEXT,
-    modified_at TEXT,
+    salary_min DOUBLE PRECISION,
+    salary_max DOUBLE PRECISION,
+    entry_date DATE,
+    publication_date DATE,
+    first_publication_date DATE,
+    modified_at TIMESTAMP,
     external_url TEXT,
     partner_name TEXT,
     partner_url TEXT,
     employer_customer_hash TEXT
 );
-"""
+""")
 
 
-CREATE_JOB_LOCATIONS_TABLE_SQL = """
+CREATE_JOB_LOCATIONS_TABLE_SQL = text("""
 CREATE TABLE IF NOT EXISTS job_locations (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    reference_number TEXT NOT NULL,
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    reference_number TEXT NOT NULL
+        REFERENCES jobs(reference_number)
+        ON DELETE CASCADE,
     postal_code TEXT,
     city TEXT,
     region TEXT,
     country TEXT,
-    latitude REAL,
-    longitude REAL,
-    FOREIGN KEY (reference_number)
-        REFERENCES jobs (reference_number)
-        ON DELETE CASCADE
+    latitude DOUBLE PRECISION,
+    longitude DOUBLE PRECISION
 );
-"""
+""")
 
-CREATE_LOCATION_INDEX_SQL = """
+CREATE_LOCATION_INDEX_SQL = text("""
 CREATE INDEX IF NOT EXISTS idx_job_locations_reference_number
 ON job_locations (reference_number);
-"""
+""")
 
 
-UPSERT_JOB_SQL = """
+UPSERT_JOB_SQL = text("""
 INSERT INTO jobs (
     reference_number,
     title,
@@ -140,10 +141,10 @@ ON CONFLICT(reference_number) DO UPDATE SET
     partner_name = excluded.partner_name,
     partner_url = excluded.partner_url,
     employer_customer_hash = excluded.employer_customer_hash;
-"""
+""")
 
 
-INSERT_LOCATION_SQL = """
+INSERT_LOCATION_SQL = text("""
 INSERT INTO job_locations (
     reference_number,
     postal_code,
@@ -162,16 +163,7 @@ VALUES (
     :latitude,
     :longitude
 );
-"""
-
-
-BOOLEAN_FIELDS = {
-    "full_time",
-    "career_change_suitable",
-    "home_office_possible",
-    "temporary_employment",
-    "private_placement",
-}
+""")
 
 # endregion
 
@@ -179,36 +171,31 @@ BOOLEAN_FIELDS = {
 logger = logging.getLogger(__name__)
 
 
-def _to_sqlite_boolean(value: Any) -> int | None:
-    """Convert a JSON boolean into SQLite's integer representation."""
-
+def _to_date(value: str | None) -> date | None:
     if value is None:
         return None
 
-    if isinstance(value, bool):
-        return int(value)
+    return date.fromisoformat(value)
 
-    raise ValueError(f"Expected a boolean or null, received {value!r}")
+
+def _to_datetime(value: str | None) -> datetime | None:
+    if value is None:
+        return None
+
+    return datetime.fromisoformat(value)
 
 
 def _parse_arguments() -> argparse.Namespace:
     """Parse command-line arguments."""
 
     parser = argparse.ArgumentParser(
-        description="Load clean Arbeitsagentur jobs into SQLite."
+        description="Load clean Arbeitsagentur jobs into the job database."
     )
 
     parser.add_argument(
         "source",
         type=Path,
         help="Path to a clean-jobs.json file.",
-    )
-
-    parser.add_argument(
-        "--database",
-        type=Path,
-        default=DATABASE_PATH,
-        help=(f"Path to the SQLite database. Default: {DATABASE_PATH}"),
     )
 
     return parser.parse_args()
@@ -240,7 +227,7 @@ def _load_json(source_path: Path) -> list[dict[str, Any]]:
 
 
 def _prepare_job(job: dict[str, Any]) -> dict[str, Any]:
-    """Prepare one cleaned job for insertion into SQLite."""
+    """Prepare one cleaned job for insertion into the database."""
 
     reference_number = job.get("reference_number")
 
@@ -251,25 +238,19 @@ def _prepare_job(job: dict[str, Any]) -> dict[str, Any]:
     # job_locations table.
     prepared_job = {key: value for key, value in job.items() if key != "locations"}
 
-    for field in BOOLEAN_FIELDS:
-        prepared_job[field] = _to_sqlite_boolean(job.get(field))
+    prepared_job["publication_date"] = _to_date(job.get("publication_date"))
+    prepared_job["first_publication_date"] = _to_date(job.get("first_publication_date"))
+    prepared_job["entry_date"] = _to_date(job.get("entry_date"))
+    prepared_job["modified_at"] = _to_datetime(job.get("modified_at"))
 
     return prepared_job
 
 
-def _create_schema(connection: sqlite3.Connection) -> None:
-    """Create the database tables and indexes."""
-
-    connection.execute(CREATE_JOBS_TABLE_SQL)
-    connection.execute(CREATE_JOB_LOCATIONS_TABLE_SQL)
-    connection.execute(CREATE_LOCATION_INDEX_SQL)
-
-
 def _load_jobs(
-    connection: sqlite3.Connection,
+    connection: Connection,
     jobs: list[dict[str, Any]],
 ) -> tuple[int, int]:
-    """Insert or update jobs and replace their locations."""
+    """Insert or update jobs, using one transaction per job."""
 
     num_loaded_jobs = 0
     num_skipped_jobs = 0
@@ -277,18 +258,20 @@ def _load_jobs(
     for job_number, job in enumerate(jobs, start=1):
         try:
             # Commit all changes for this job together, or roll them all back.
-            with connection:
+            with connection.begin():
                 prepared_job = _prepare_job(job)
                 reference_number = prepared_job["reference_number"]
 
                 connection.execute(UPSERT_JOB_SQL, prepared_job)
 
                 connection.execute(
-                    """
-                    DELETE FROM job_locations
-                    WHERE reference_number = ?
-                    """,
-                    (reference_number,),
+                    text("""
+                        DELETE FROM job_locations
+                        WHERE reference_number = :reference_number
+                    """),
+                    {
+                        "reference_number": reference_number,
+                    },
                 )
 
                 locations = job.get("locations", [])
@@ -318,7 +301,7 @@ def _load_jobs(
 
             num_loaded_jobs += 1
 
-        except (ValueError, TypeError, sqlite3.IntegrityError) as error:
+        except (ValueError, TypeError, IntegrityError) as error:
             num_skipped_jobs += 1
             logger.warning(
                 "Skipping job %d: %s",
@@ -329,18 +312,19 @@ def _load_jobs(
     return num_loaded_jobs, num_skipped_jobs
 
 
-def load_clean_jobs_to_sqlite(
+def load_clean_jobs_to_db(
     jobs: list[dict[str, Any]],
-    database_path: Path = DATABASE_PATH,
 ) -> tuple[int, int]:
-    """Create the SQLite database and load cleaned jobs into it."""
+    """Create the database schema and load cleaned jobs."""
 
-    database_path.parent.mkdir(parents=True, exist_ok=True)
+    with get_database_connection() as connection:
+        # Create Schema is one transaction
+        with connection.begin():
+            connection.execute(CREATE_JOBS_TABLE_SQL)
+            connection.execute(CREATE_JOB_LOCATIONS_TABLE_SQL)
+            connection.execute(CREATE_LOCATION_INDEX_SQL)
 
-    with sqlite3.connect(database_path) as connection:
-        connection.execute("PRAGMA foreign_keys = ON")
-        _create_schema(connection)
-
+        # Creates one transaction per job
         return _load_jobs(
             connection=connection,
             jobs=jobs,
@@ -348,7 +332,7 @@ def load_clean_jobs_to_sqlite(
 
 
 def main() -> None:
-    """Load a clean-jobs JSON file into SQLite."""
+    """Load a clean-jobs JSON file into the job database."""
 
     logging.basicConfig(
         level=logging.INFO,
@@ -358,20 +342,15 @@ def main() -> None:
     arguments = _parse_arguments()
 
     source_path: Path = arguments.source
-    database_path: Path = arguments.database
 
     if not source_path.is_file():
         raise FileNotFoundError(f"JSON file not found: {source_path}")
 
     jobs = _load_json(source_path)
 
-    loaded_jobs, skipped_jobs = load_clean_jobs_to_sqlite(
-        jobs=jobs,
-        database_path=database_path,
-    )
+    loaded_jobs, skipped_jobs = load_clean_jobs_to_db(jobs=jobs)
 
     logger.info("Source file: %s", source_path)
-    logger.info("Database: %s", database_path)
     logger.info("Loaded jobs: %d", loaded_jobs)
     logger.info("Skipped jobs: %d", skipped_jobs)
 

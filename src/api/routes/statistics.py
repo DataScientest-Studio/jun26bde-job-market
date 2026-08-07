@@ -1,16 +1,18 @@
 """
-API routes for reading job advertisements from the processed SQLite database.
+API routes for reading job advertisements from the job database.
 
 The endpoints in this module provide read-only access to jobs previously
 collected and processed by the data pipeline.
 """
 
+from datetime import date
 import logging
 
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel
+from sqlalchemy import text
 
-from src.data.sqlite_database import (
+from src.data.database import (
     DatabaseUnavailableError,
     get_database_connection,
 )
@@ -30,7 +32,7 @@ router = APIRouter(
 # region SQL queries
 
 # Retrieve the general numbers and publication-date range of stored jobs.
-GET_OVERVIEW_SQL = """
+GET_OVERVIEW_SQL = text("""
 SELECT
     COUNT(*) AS total_jobs,
     COUNT(
@@ -41,10 +43,10 @@ SELECT
     MIN(publication_date) AS earliest_publication_date,
     MAX(publication_date) AS latest_publication_date
 FROM jobs
-"""
+""")
 
 # Count distinct locations that have a valid city.
-GET_TOTAL_LOCATIONS_SQL = """
+GET_TOTAL_LOCATIONS_SQL = text("""
 SELECT COUNT(*) AS total_locations
 FROM (
     SELECT DISTINCT
@@ -55,10 +57,10 @@ FROM (
     WHERE city IS NOT NULL
       AND TRIM(city) <> ''
 )
-"""
+""")
 
 # Retrieve companies with the highest numbers of job advertisements.
-GET_COMPANY_STATISTICS_SQL = """
+GET_COMPANY_STATISTICS_SQL = text("""
 SELECT
     company,
     COUNT(*) AS job_count
@@ -67,11 +69,11 @@ WHERE company IS NOT NULL
   AND TRIM(company) <> ''
 GROUP BY company
 ORDER BY job_count DESC, company ASC
-LIMIT ?
-"""
+LIMIT :limit
+""")
 
 # Retrieve locations with the highest numbers of distinct jobs.
-GET_LOCATION_STATISTICS_SQL = """
+GET_LOCATION_STATISTICS_SQL = text("""
 SELECT
     city,
     region,
@@ -89,23 +91,23 @@ ORDER BY
     country ASC,
     region ASC,
     city ASC
-LIMIT ?
-"""
+LIMIT :limit
+""")
 
 # Count jobs by their reported home-office availability.
-GET_HOME_OFFICE_STATISTICS_SQL = """
+GET_HOME_OFFICE_STATISTICS_SQL = text("""
 SELECT
     COUNT(
-        CASE WHEN home_office_possible = 1 THEN 1 END
+        CASE WHEN home_office_possible THEN 1 END
     ) AS possible,
     COUNT(
-        CASE WHEN home_office_possible = 0 THEN 1 END
+        CASE WHEN NOT home_office_possible THEN 1 END
     ) AS not_possible,
     COUNT(
         CASE WHEN home_office_possible IS NULL THEN 1 END
     ) AS unknown
 FROM jobs
-"""
+""")
 
 # endregion
 
@@ -119,8 +121,8 @@ class StatisticsOverviewModel(BaseModel):
     total_jobs: int
     total_companies: int
     total_locations: int
-    earliest_publication_date: str | None = None
-    latest_publication_date: str | None = None
+    earliest_publication_date: date | None = None
+    latest_publication_date: date | None = None
 
 
 class CompanyStatisticsModel(BaseModel):
@@ -170,8 +172,8 @@ def get_overview() -> StatisticsOverviewModel:
     """
     try:
         with get_database_connection() as connection:
-            overview_row = connection.execute(GET_OVERVIEW_SQL).fetchone()
-            locations_row = connection.execute(GET_TOTAL_LOCATIONS_SQL).fetchone()
+            overview_row = connection.execute(GET_OVERVIEW_SQL).one()
+            locations_row = connection.execute(GET_TOTAL_LOCATIONS_SQL).one()
     except DatabaseUnavailableError:
         logger.exception("Could not read statistics from the job database")
         raise HTTPException(
@@ -179,8 +181,8 @@ def get_overview() -> StatisticsOverviewModel:
             detail="The job database is unavailable.",
         )
 
-    overview_data = dict(overview_row)
-    overview_data["total_locations"] = locations_row["total_locations"]
+    overview_data = dict(overview_row._mapping)
+    overview_data["total_locations"] = locations_row._mapping["total_locations"]
 
     return StatisticsOverviewModel(**overview_data)
 
@@ -228,7 +230,7 @@ def get_company_statistics(
         with get_database_connection() as connection:
             rows = connection.execute(
                 GET_COMPANY_STATISTICS_SQL,
-                (limit,),
+                {"limit": limit},
             ).fetchall()
 
     except DatabaseUnavailableError:
@@ -239,7 +241,7 @@ def get_company_statistics(
             detail="The job database is unavailable.",
         )
 
-    return [CompanyStatisticsModel(**dict(row)) for row in rows]
+    return [CompanyStatisticsModel(**row._mapping) for row in rows]
 
 
 @router.get(
@@ -287,7 +289,7 @@ def get_location_statistics(
 
             rows = connection.execute(
                 GET_LOCATION_STATISTICS_SQL,
-                (limit,),
+                {"limit": limit},
             ).fetchall()
 
     except DatabaseUnavailableError:
@@ -298,7 +300,7 @@ def get_location_statistics(
             detail="The job database is unavailable.",
         )
 
-    return [LocationStatisticsModel(**dict(row)) for row in rows]
+    return [LocationStatisticsModel(**row._mapping) for row in rows]
 
 
 @router.get(
@@ -322,7 +324,7 @@ def get_home_office_statistics() -> HomeOfficeStatisticsModel:
     try:
         with get_database_connection() as connection:
 
-            row = connection.execute(GET_HOME_OFFICE_STATISTICS_SQL).fetchone()
+            row = connection.execute(GET_HOME_OFFICE_STATISTICS_SQL).one()
 
     except DatabaseUnavailableError:
         logger.exception("Could not read home-office statistics from the job database")
@@ -332,7 +334,7 @@ def get_home_office_statistics() -> HomeOfficeStatisticsModel:
             detail="The job database is unavailable.",
         )
 
-    return HomeOfficeStatisticsModel(**dict(row))
+    return HomeOfficeStatisticsModel(**row._mapping)
 
 
 # endregion
