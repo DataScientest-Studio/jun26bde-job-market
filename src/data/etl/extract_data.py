@@ -1,6 +1,5 @@
-"""Download a small raw sample from the Arbeitsagentur job-search API."""
+"""E/ETL: Extract raw job data from the Arbeitsagentur job-search API."""
 
-import json
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
@@ -10,103 +9,17 @@ import requests
 
 from src.config.settings import (
     FIRST_PAGE,
+    JOB_DETAIL_FAILURES_FILE_NAME,
+    JOB_DETAILS_FILE_NAME,
     JOBS_PER_PAGE,
-    KEYWORDS,
+    DEFAULT_JOB_SEARCH_KEYWORDS,
     NUMBER_OF_PAGES,
     RAW_DATA_DIRECTORY,
 )
 from src.data.arbeitsagentur_client import ArbeitsagenturClient
-from src.data.database_loader import (
-    load_clean_jobs_to_db,
-)
-from src.data.job_location_geocoder import JobLocationGeocoder
+from src.data.utils.json_utils import save_json
 
 logger = logging.getLogger(__name__)
-
-
-def _save_json(data: Any, target_path: Path) -> None:
-    """Write JSON-compatible data as UTF-8 JSON."""
-
-    target_path.parent.mkdir(parents=True, exist_ok=True)
-
-    with target_path.open("w", encoding="utf-8") as file:
-        json.dump(
-            data,
-            file,
-            ensure_ascii=False,
-            indent=2,
-        )
-
-
-def _clean_job(raw_job: dict[str, Any]) -> dict[str, Any]:
-    """Convert one raw Arbeitsagentur job into our cleaner structure."""
-
-    raw_locations = raw_job.get("stellenlokationen", [])
-    clean_locations: list[dict[str, Any]] = []
-
-    if not isinstance(raw_locations, list):
-        logger.warning(
-            "Ignoring malformed 'stellenlokationen' value: %r",
-            raw_locations,
-        )
-        raw_locations = []
-
-    for raw_location in raw_locations:
-        if not isinstance(raw_location, dict):
-            continue
-
-        raw_address = raw_location.get("adresse", {})
-
-        if not isinstance(raw_address, dict):
-            raw_address = {}
-
-        clean_locations.append(
-            {
-                "postal_code": raw_address.get("plz"),
-                "city": raw_address.get("ort"),
-                "region": raw_address.get("region"),
-                "country": raw_address.get("land"),
-                "latitude": raw_location.get("breite"),
-                "longitude": raw_location.get("laenge"),
-            }
-        )
-
-    entry_period = raw_job.get("eintrittszeitraum", {})
-    publication_period = raw_job.get("veroeffentlichungszeitraum", {})
-
-    if not isinstance(entry_period, dict):
-        entry_period = {}
-
-    if not isinstance(publication_period, dict):
-        publication_period = {}
-
-    return {
-        "reference_number": raw_job.get("referenznummer"),
-        "title": raw_job.get("stellenangebotsTitel"),
-        "occupation": raw_job.get("hauptberuf"),
-        "company": raw_job.get("firma"),
-        "description": raw_job.get("stellenangebotsBeschreibung"),
-        "offer_type": raw_job.get("stellenangebotsart"),
-        "full_time": raw_job.get("arbeitszeitVollzeit"),
-        "contract_duration": raw_job.get("vertragsdauer"),
-        "career_change_suitable": raw_job.get("quereinstiegGeeignet"),
-        "home_office_possible": raw_job.get("homeofficemoeglich"),
-        "temporary_employment": raw_job.get("istArbeitnehmerUeberlassung"),
-        "private_placement": raw_job.get("istPrivateArbeitsvermittlung"),
-        "salary_period": raw_job.get("verguetungsangabe"),
-        "salary_type": raw_job.get("artDerVerguetung"),
-        "salary_min": raw_job.get("gehaltsspanneVon"),
-        "salary_max": raw_job.get("gehaltsspanneBis"),
-        "entry_date": entry_period.get("von"),
-        "publication_date": publication_period.get("von"),
-        "first_publication_date": raw_job.get("datumErsteVeroeffentlichung"),
-        "modified_at": raw_job.get("aenderungsdatum"),
-        "external_url": raw_job.get("externeURL"),
-        "partner_name": raw_job.get("allianzpartnerName"),
-        "partner_url": raw_job.get("allianzpartnerUrl"),
-        "employer_customer_hash": raw_job.get("arbeitgeberKundennummerHash"),
-        "locations": clean_locations,
-    }
 
 
 def _search_jobs(
@@ -151,7 +64,7 @@ def _search_jobs(
                 )
                 continue
 
-            _save_json(
+            save_json(
                 search_result,
                 keyword_directory / f"page-{page_number:03d}.json",
             )
@@ -231,22 +144,20 @@ def _retrieve_job_details(
     return job_details, failures
 
 
-def main() -> None:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(levelname)s %(name)s: %(message)s",
-    )
-
+def extract_data(keywords: tuple[str, ...]) -> Path:
+    """Extract raw job data and return the path to the job-details.json file."""
     extraction_time = datetime.now(timezone.utc)
     output_directory = RAW_DATA_DIRECTORY / extraction_time.strftime(
         "%Y-%m-%dT%H-%M-%SZ"
     )
+    details_output_path = output_directory / JOB_DETAILS_FILE_NAME
+    failures_output_path = output_directory / JOB_DETAIL_FAILURES_FILE_NAME
 
     client = ArbeitsagenturClient()
 
     job_summaries = _search_jobs(
         client,
-        keywords=KEYWORDS,
+        keywords=keywords,
         first_page=FIRST_PAGE,
         number_of_pages=NUMBER_OF_PAGES,
         jobs_per_page=JOBS_PER_PAGE,
@@ -263,38 +174,26 @@ def main() -> None:
         job_summaries,
     )
 
-    details_output_path = output_directory / "job-details.json"
-    failures_output_path = output_directory / "job-detail-failures.json"
-
-    _save_json(job_details, details_output_path)
-    _save_json(failed_jobs, failures_output_path)
-
-    clean_jobs = [_clean_job(job) for job in job_details]
-
-    geocoder = JobLocationGeocoder()
-    clean_jobs, num_malformed_locations = geocoder.enrich_jobs_with_geocoding(
-        clean_jobs
-    )
-
-    clean_output_path = output_directory / "clean-jobs.json"
-    _save_json(clean_jobs, clean_output_path)
-
-    num_loaded_jobs, num_skipped_jobs = load_clean_jobs_to_db(
-        jobs=clean_jobs,
-    )
+    save_json(job_details, details_output_path)
+    save_json(failed_jobs, failures_output_path)
 
     logger.info(
-        "Pipeline finished: %d details retrieved, "
-        "%d detail requests failed, %d jobs loaded, "
-        "%d jobs skipped, %d malformed locations skipped",
+        "Extraction finished: %d details retrieved, %d detail requests failed",
         len(job_details),
         len(failed_jobs),
-        num_loaded_jobs,
-        num_skipped_jobs,
-        num_malformed_locations,
     )
     logger.info("Raw job details saved to %s", details_output_path)
-    logger.info("Clean job data saved to %s", clean_output_path)
+
+    return details_output_path
+
+
+def main() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(levelname)s %(name)s: %(message)s",
+    )
+
+    extract_data(DEFAULT_JOB_SEARCH_KEYWORDS)
 
 
 if __name__ == "__main__":

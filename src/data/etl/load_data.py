@@ -1,7 +1,6 @@
-"""Load cleaned Arbeitsagentur job data into the job database."""
+"""L/ETL: Load cleaned Arbeitsagentur job data into the job database."""
 
 import argparse
-import json
 import logging
 from datetime import date, datetime
 from pathlib import Path
@@ -10,6 +9,7 @@ from sqlalchemy import Connection, text
 from sqlalchemy.exc import IntegrityError
 
 from src.data.database import get_database_connection
+from src.data.utils.json_utils import load_json
 
 # region SQL statements
 
@@ -171,20 +171,6 @@ VALUES (
 logger = logging.getLogger(__name__)
 
 
-def _to_date(value: str | None) -> date | None:
-    if value is None:
-        return None
-
-    return date.fromisoformat(value)
-
-
-def _to_datetime(value: str | None) -> datetime | None:
-    if value is None:
-        return None
-
-    return datetime.fromisoformat(value)
-
-
 def _parse_arguments() -> argparse.Namespace:
     """Parse command-line arguments."""
 
@@ -201,29 +187,18 @@ def _parse_arguments() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _load_json(source_path: Path) -> list[dict[str, Any]]:
-    """Read and validate a clean-jobs JSON file."""
+def _to_date(value: str | None) -> date | None:
+    if value is None:
+        return None
 
-    with source_path.open("r", encoding="utf-8") as file:
-        data = json.load(file)
+    return date.fromisoformat(value)
 
-    if not isinstance(data, list):
-        raise TypeError("Expected the JSON file to contain a list of jobs")
 
-    jobs: list[dict[str, Any]] = []
+def _to_datetime(value: str | None) -> datetime | None:
+    if value is None:
+        return None
 
-    for index, item in enumerate(data, start=1):
-        if not isinstance(item, dict):
-            logger.warning(
-                "Skipping entry %d: expected a JSON object, received %r",
-                index,
-                item,
-            )
-            continue
-
-        jobs.append(item)
-
-    return jobs
+    return datetime.fromisoformat(value)
 
 
 def _prepare_job(job: dict[str, Any]) -> dict[str, Any]:
@@ -312,7 +287,7 @@ def _load_jobs(
     return num_loaded_jobs, num_skipped_jobs
 
 
-def load_clean_jobs_to_db(
+def _load_clean_jobs_to_db(
     jobs: list[dict[str, Any]],
 ) -> tuple[int, int]:
     """Create the database schema and load cleaned jobs."""
@@ -331,28 +306,31 @@ def load_clean_jobs_to_db(
         )
 
 
-def main() -> None:
+def load_data(source_path: Path) -> tuple[int, int]:
     """Load a clean-jobs JSON file into the job database."""
 
+    if not source_path.is_file():
+        raise FileNotFoundError(f"JSON file not found: {source_path}")
+
+    jobs = load_json(source_path)
+
+    loaded_jobs, skipped_jobs = _load_clean_jobs_to_db(jobs=jobs)
+
+    logger.info("Source file: %s", source_path)
+    logger.info("Loaded jobs: %d", loaded_jobs)
+    logger.info("Skipped jobs: %d", skipped_jobs)
+
+    return loaded_jobs, skipped_jobs
+
+
+def main() -> None:
     logging.basicConfig(
         level=logging.INFO,
         format="%(levelname)s %(name)s: %(message)s",
     )
 
     arguments = _parse_arguments()
-
-    source_path: Path = arguments.source
-
-    if not source_path.is_file():
-        raise FileNotFoundError(f"JSON file not found: {source_path}")
-
-    jobs = _load_json(source_path)
-
-    loaded_jobs, skipped_jobs = load_clean_jobs_to_db(jobs=jobs)
-
-    logger.info("Source file: %s", source_path)
-    logger.info("Loaded jobs: %d", loaded_jobs)
-    logger.info("Skipped jobs: %d", skipped_jobs)
+    load_data(arguments.source)
 
 
 if __name__ == "__main__":
