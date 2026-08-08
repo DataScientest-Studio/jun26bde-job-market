@@ -6,7 +6,7 @@ SWAGGER_URL="http://127.0.0.1:8000/docs"
 HEALTH_URL="http://127.0.0.1:8000/health"
 DASH_URL="http://127.0.0.1:8050"
 
-docker compose up --build -d
+docker compose up --build -d postgres backend frontend
 
 wait_for_url() {
     url="$1"
@@ -39,10 +39,10 @@ wait_for_url() {
 }
 
 echo "Waiting for FastAPI..."
-wait_for_url "$HEALTH_URL" app
+wait_for_url "$HEALTH_URL" backend
 
 echo "Waiting for Dash..."
-wait_for_url "$DASH_URL" app
+wait_for_url "$DASH_URL" frontend
 
 python -c '
 import sys
