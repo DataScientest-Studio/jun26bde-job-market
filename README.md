@@ -108,10 +108,10 @@ python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-#### Create or update SQLite database with recent jobs
+#### Create or update database with recent jobs
 
 ```sh
-python -m src.data.make_dataset
+python -m src.data.etl.etl --keyword "Data Engineer" --keyword "AI Engineer"
 ```
 
 #### Start the backend API
@@ -126,7 +126,6 @@ python -m uvicorn src.api.main:api --reload
 python -m src.dashboard.app
 ```
 
-
 ### With Docker
 
 Start the application:
@@ -135,15 +134,12 @@ Start the application:
 ./docker_start.sh
 ```
 
-If you see an error that the SQLite database does not exist, run:
-```sh
-./docker_build_db.sh
-```
+(This starts PostgreSQL, the FastAPI backend, and the Dash frontend.)
 
-Then start the application again:
+#### Create or update the database with recent jobs
 
 ```sh
-./docker_start.sh
+./docker_update_data.sh --keyword "Data Engineer" --keyword "AI Engineer"
 ```
 
 ### Open in your browser

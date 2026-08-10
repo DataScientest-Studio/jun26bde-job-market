@@ -5,6 +5,8 @@ geopy>=2.4,<3.0
 pandas>=2.2,<4.0
 pydantic>=2.10,<3.0
 requests>=2.32,<3.0
+sqlalchemy>=2.0,<3.0
+psycopg[binary]>=3.2,<4.0
 uvicorn>=0.35,<1.0
 
 # Development and testing

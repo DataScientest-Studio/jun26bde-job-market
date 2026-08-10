@@ -1,1 +1,0 @@
-docker compose run --rm app python -m src.data.make_dataset

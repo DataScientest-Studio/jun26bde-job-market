@@ -5,8 +5,9 @@ set -e
 SWAGGER_URL="http://127.0.0.1:8000/docs"
 HEALTH_URL="http://127.0.0.1:8000/health"
 DASH_URL="http://127.0.0.1:8050"
+AIRFLOW_URL="http://127.0.0.1:8080"
 
-docker compose up --build -d
+docker compose up --build -d postgres backend frontend airflow
 
 wait_for_url() {
     url="$1"
@@ -39,10 +40,19 @@ wait_for_url() {
 }
 
 echo "Waiting for FastAPI..."
-wait_for_url "$HEALTH_URL" app
+wait_for_url "$HEALTH_URL" backend
 
 echo "Waiting for Dash..."
-wait_for_url "$DASH_URL" app
+wait_for_url "$DASH_URL" frontend
+
+echo "Waiting for Airflow..."
+wait_for_url "$AIRFLOW_URL" airflow
+
+AIRFLOW_PASSWORD_LINE=$(
+    docker compose logs airflow 2>/dev/null \
+        | grep "Password for user" \
+        | tail -1
+)
 
 python -c '
 import sys
@@ -50,7 +60,24 @@ import webbrowser
 
 for url in sys.argv[1:]:
     webbrowser.open(url)
-' "$SWAGGER_URL" "$DASH_URL"
+' "$SWAGGER_URL" "$DASH_URL" "$AIRFLOW_URL"
 
-echo "Swagger is ready at $SWAGGER_URL"
-echo "Dash    is ready at $DASH_URL"
+echo
+echo "======================================"
+echo "Job Market is ready"
+echo "======================================"
+echo "Swagger: $SWAGGER_URL"
+echo "Dash:    $DASH_URL"
+echo "Airflow: $AIRFLOW_URL"
+echo
+
+if [ -n "$AIRFLOW_PASSWORD_LINE" ]; then
+    echo "Airflow credentials:"
+    echo "$AIRFLOW_PASSWORD_LINE"
+else
+    echo "Airflow password was not found in the logs."
+    echo "Run:"
+    echo "docker compose logs airflow | grep \"Password for user\""
+fi
+
+echo "======================================"
