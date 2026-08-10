@@ -14,6 +14,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DATA_DIRECTORY = PROJECT_ROOT / "data"
 
 RAW_DATA_DIRECTORY = DATA_DIRECTORY / "raw" / "arbeitsagentur"
+PROCESSED_DATA_DIRECTORY = DATA_DIRECTORY / "processed" / "arbeitsagentur"
 
 CLEAN_JSON_FILE_NAME = "clean-jobs.json"
 JOB_DETAILS_FILE_NAME = "job-details.json"
