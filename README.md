@@ -39,17 +39,24 @@ src
 |   |   arbeitsagentur_client.py
 |   |       retrieves jobs from the Arbeitsagentur API
 |   |
+|   |   database.py
+|   |       provides shared PostgreSQL database access
+|   |
 |   |   job_location_geocoder.py
-|   |       adds latitude and longitude coordinates to job locations
+|   |       adds missing latitude and longitude coordinates
 |   |
-|   |   make_dataset.py
-|   |       runs the complete data pipeline: downloading, cleaning, geocoding, and saving jobs
-|   |
-|   |   sqlite_database.py
-|   |       helper for database access
-|   |
-|   |   sqlite_loader.py
-|   |       inserts or updates cleaned jobs in the SQLite database
+|   +---etl
+|       |   etl.py
+|       |       runs the complete Extract-Transform-Load pipeline
+|       |
+|       |   extract_data.py
+|       |       downloads and stores raw job data
+|       |
+|       |   transform_data.py
+|       |       converts raw jobs to the internal schema and geocodes locations
+|       |
+|       |   load_data.py
+|               creates/updates PostgreSQL records
 |
 +---tests
 |   |   test_smoke.py
@@ -62,15 +69,14 @@ src
 data
 |
 +---processed
-|   |   job_market.sqlite3
-|   |       processed SQLite database used by the API and dashboard
+|   \---arbeitsagentur
+|       \---<timestamp>
+|           |   clean-jobs.json
+|           |       transformed and enriched job data
 |
 \---raw
     \---arbeitsagentur
         \---<timestamp>
-            |   clean-jobs.json
-            |       cleaned and normalized job data
-            |
             |   job-details.json
             |       raw job details retrieved from the API
             |
@@ -89,6 +95,10 @@ data
 
 ![Project Overview](docs/images/project-overview.png)
 
+### Ingestion
+
+![Ingestion](docs/images/ingestion.png)
+
 ### Docker Deployment
 
 ![Docker Deployment](docs/images/docker-deployment.png)
@@ -97,12 +107,14 @@ data
 
 > **Note:** Every command in this section is assumed to be run from the project root directory.
 
-### Without Docker
+### Local Development
+
+> **Note:** The Python application can run locally, but PostgreSQL is required. If PostgreSQL is not installed locally, start only the PostgreSQL Docker service with `docker compose up -d postgres`.
 
 #### Setup Python
 
 ```sh
-py -m venv .venv
+python -m venv .venv
 source .venv\bin\activate
 python -m pip install --upgrade pip
 pip install -r requirements.txt
@@ -134,7 +146,7 @@ Start the application:
 ./docker_start.sh
 ```
 
-(This starts PostgreSQL, the FastAPI backend, and the Dash frontend.)
+(This starts PostgreSQL, the FastAPI backend, Airflow, and the Dash frontend.)
 
 #### Create or update the database with recent jobs
 
@@ -147,6 +159,8 @@ Start the application:
 **Swagger (Backend):** http://127.0.0.1:8000/docs
 
 **Dash (Frontend):** http://127.0.0.1:8050
+
+**Airflow:** http://127.0.0.1:8080
 
 ##
 

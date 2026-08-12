@@ -5,7 +5,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from src.config.settings import CLEAN_JSON_FILE_NAME
+from src.config.settings import CLEAN_JSON_FILE_NAME, PROCESSED_DATA_DIRECTORY
 from src.data.job_location_geocoder import JobLocationGeocoder
 from src.data.utils.json_utils import load_json, save_json
 
@@ -101,8 +101,9 @@ def _clean_job(raw_job: dict[str, Any]) -> dict[str, Any]:
 
 def transform_data(source_path: Path) -> Path:
     """Transform raw job details and return the clean JSON path."""
-    output_directory = source_path.parent
-    clean_output_path = output_directory / CLEAN_JSON_FILE_NAME
+    clean_output_path = (
+        PROCESSED_DATA_DIRECTORY / source_path.parent.name / CLEAN_JSON_FILE_NAME
+    )
 
     job_details = load_json(source_path)
 
