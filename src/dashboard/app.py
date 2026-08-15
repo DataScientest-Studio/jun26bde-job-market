@@ -158,7 +158,7 @@ def create_map(jobs: list[dict]) -> Figure:
             "longitude": False,
         },
         custom_data=["reference_number"],
-        zoom=4.5,
+        zoom=4,
         center={"lat": 51.1, "lon": 10.4},
         map_style="open-street-map",
     )
@@ -308,7 +308,7 @@ def search_jobs(
 ) -> tuple[list, Figure]:
     """Retrieve jobs from FastAPI and update the results."""
 
-    parameters = {
+    parameters: dict[str, str | int] = {
         "limit": 100,
     }
 
