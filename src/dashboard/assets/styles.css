@@ -1,22 +1,34 @@
+/* #region Global */
+
+/* Represents the root element of the HTML document. It is commonly used to define global CSS variables. */
 :root {
-  --background: #ffffff;
-  --surface: #ffffff;
-  --text: #222222;
-  --muted-text: #717171;
-  --border: #dddddd;
-  --accent: #ff385c;
-  --accent-dark: #d90b3e;
+  --background: #ffffff; /* Main page background color. */
+  --surface: #ffffff; /* Background color of cards and other surfaces. */
+  --text: #222222; /* Main text color. */
+  --muted-text: #717171; /* Less prominent secondary text. */
+  --border: #dddddd; /* Standard border color. */
+  --accent: #ff385c; /* Main accent color, e.g. buttons and logo. */
+  --accent-dark: #d90b3e; /* Darker accent color used for hover effects. */
+
+  /* Box shadow: 0 horizontal offset, 6px vertical offset, 20px blur radius, black with 8% opacity. */
   --shadow: 0 6px 20px rgb(0 0 0 / 8%);
 }
 
+/* * is the universal selector and therefore applies to all elements. */
 * {
+  /* Include padding and borders in the specified width and height. */
   box-sizing: border-box;
 }
 
+/* Styles applied to the entire visible HTML document. */
 body {
   margin: 0;
-  background: var(--background);
-  color: var(--text);
+  background: var(
+    --background
+  ); /* Use the global background variable (see :root). */
+  color: var(--text); /* Default text color (see :root). */
+
+  /* Use the first available font in this list. */
   font-family:
     Inter,
     -apple-system,
@@ -25,303 +37,333 @@ body {
     sans-serif;
 }
 
+/* #endregion */
+
+/* #region Header and navigation */
+
+/* For buttons and inputs sue the font-family from body (see body). */
 button,
 input {
   font: inherit;
 }
 
+/* Remove the colored tap highlight shown by WebKit-based browsers on touch devices. */
 button,
 a {
   -webkit-tap-highlight-color: transparent;
 }
 
+/* Header containing the logo and navigation. */
 .page-header {
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  display: grid;
+  position: sticky; /* Header remains visible while scrolling. */
+  top: 0; /* Stick to the top of the viewport. */
+  z-index: 10; /* Keep the header in front of other content. */
+
+  display: grid; /* Use CSS Grid for the header layout. */
+
+  /* Center column takes only the space it needs, left and right columns take equal remaining space. */
   grid-template-columns: 1fr auto 1fr;
-  align-items: center;
+
+  align-items: center; /* Vertically center grid content. */
   min-height: 76px;
+
   padding: 0 5%;
+
   background: rgb(255 255 255 / 96%);
+
+  /* Thin line separating the header from the page. */
   border-bottom: 1px solid var(--border);
 }
 
+/* "jobmarket" logo/link in the header's top left corner. */
 .brand {
-  display: flex;
-  gap: 10px;
-  align-items: center;
+  display: flex; /* Place icon and text next to each other. */
+  gap: 10px; /* 10px space between icon and text. */
+  align-items: center; /* Vertically align icon and text. */
   color: var(--accent);
   font-size: 22px;
-  font-weight: 750;
-  text-decoration: none;
+  font-weight: 750; /* Bold text. */
+  text-decoration: none; /* Remove normal link underline. */
 }
 
+/* Circular "J" icon next to the brand name. */
 .brand-icon {
   display: grid;
+
   width: 36px;
   height: 36px;
-  place-items: center;
+
+  place-items: center; /* Center the J horizontally and vertically. */
+
   color: white;
   background: var(--accent);
-  border-radius: 50%;
+
+  border-radius: 50%; /* Turns the square into a circle. */
 }
 
-.navigation {
-  display: flex;
-  gap: 32px;
-}
-
-.navigation a {
-  padding: 27px 0 24px;
-  color: var(--muted-text);
-  text-decoration: none;
-}
-
-.navigation a:hover,
-.navigation .active {
-  color: var(--text);
-}
-
-.navigation .active {
-  border-bottom: 2px solid var(--text);
-}
-
-.hero {
+/* Header area shown at the top of each tab. */
+.tab-header {
   padding: 36px 5% 22px;
+
+  /* Two background layers:
+     1. a soft pink radial glow toward the upper-right;
+     2. a subtle white/pink diagonal gradient. */
   background:
     radial-gradient(circle at 85% 15%, #ffe6eb 0, transparent 27%),
     linear-gradient(135deg, #fff 0%, #fff8fa 100%);
 }
 
-.hero-subtitle {
+/* Subtitle shown at the top of each tab. */
+.tab-subtitle {
   margin: 16px 0 30px;
   color: var(--muted-text);
   font-size: 18px;
 }
 
+/* Button-like tabs in the header navigation. */
+.navigation-tab {
+  padding: 27px 0 12px;
+  color: var(--muted-text);
+
+  background: transparent;
+  border: 0;
+
+  cursor: pointer;
+}
+
+/* Container for the navigation tabs. */
+.navigation {
+  display: flex; /* Place tabs horizontally. */
+  gap: 32px; /* Space between tabs. */
+}
+
+/* Underline the active navigation tab. */
+.navigation .active {
+  border-bottom: 2px solid var(--text);
+}
+
+/* Active tab and hovered tab use normal text color. */
+.navigation-tab:hover,
+.navigation-tab.active {
+  color: var(--text);
+}
+
+/* Underline the currently selected tab. */
+.navigation-tab.active {
+  border-bottom: 2px solid var(--text);
+}
+
+/* #endregion */
+
+/* #region Job search tab */
+
+/* Container holding the search fields and Search button. */
 .search-panel {
   display: grid;
-  grid-template-columns: 1.3fr 1fr 1fr auto;
+  grid-template-columns: 1.3fr 1fr 1fr auto; /* keyword | location |company | search button */
+
   align-items: center;
-  max-width: 1050px;
-  margin: 0 auto;
+  max-width: 1050px; /* Prevent the search bar becoming too wide. */
+  margin: 0 auto; /* Horizontally center the panel. */
   padding: 9px;
+
   background: white;
   border: 1px solid var(--border);
   border-radius: 18px;
   box-shadow: var(--shadow);
 }
 
+/* One label/input pair inside the search panel. */
 .search-field {
   display: flex;
-  flex-direction: column;
-  gap: 5px;
+  flex-direction: column; /* Put label above input. */
+  gap: 5px; /* Space between label and input. */
   padding: 4px 22px;
+
+  /* Vertical separator between search fields. */
   border-right: 1px solid var(--border);
 }
 
+/* Labels such as What, Where and Company. */
 .search-field label {
   font-size: 12px;
   font-weight: 700;
 }
 
+/* Text inputs inside search fields. */
 .search-field input {
   width: 100%;
   padding: 3px 0;
+
   color: var(--text);
   background: transparent;
-  border: 0;
-  outline: 0;
+
+  border: 0; /* Remove browser's standard input border. */
+  outline: 0; /* Remove standard focus outline. */
 }
 
+/* Placeholder text inside search inputs. */
 .search-field input::placeholder {
   color: #999999;
 }
 
+/* Search button. */
 .search-button {
   min-width: 112px;
   height: 52px;
   margin-left: 18px;
+
   color: white;
   font-weight: 700;
   background: var(--accent);
+
   border: 0;
   border-radius: 13px;
-  cursor: pointer;
+  cursor: pointer; /* Show hand cursor on hover. */
 }
 
+/* Darken Search button while hovering. */
 .search-button:hover {
   background: var(--accent-dark);
 }
 
-.results-section {
+/* Section containing job results and map. */
+.search-results-section {
   padding: 18px 5% 50px;
 }
 
-.content-grid {
+/* Two-column layout containing job list and map. */
+.search-results-content-grid {
   display: grid;
+
+  /* Job list gets approximately 46% of the width but never below 350px. Map receives all remaining width. */
   grid-template-columns: minmax(350px, 46%) 1fr;
-  gap: 28px;
+
+  gap: 28px; /* Space between job list and map. */
   max-width: 1500px;
-  margin: 0 auto;
+  margin: 0 auto; /* Center content horizontally. */
 }
 
+/* Column containing the job cards. */
 .results-column {
   height: 650px;
-  min-height: 0;
+  min-height: 0; /* Allows grid/flex content to shrink and scroll correctly. */
 }
 
+/* Scrollable list containing job cards. */
 .job-list {
   display: flex;
-  flex-direction: column;
-  gap: 16px;
+  flex-direction: column; /* Stack job cards vertically. */
+  gap: 16px; /* Space between cards. */
+
   height: 100%;
-  padding-right: 8px;
-  overflow-y: auto;
+  padding-right: 8px; /* Space between cards and scrollbar. */
+
+  overflow-y: auto; /* Add vertical scrollbar when necessary. */
 }
 
+/* Individual job result card. */
 .job-card {
   padding: 21px;
   background: var(--surface);
+
   border: 1px solid var(--border);
   border-radius: 16px;
+
+  /* Animate changes to these properties on hover. */
   transition:
     border-color 150ms ease,
     box-shadow 150ms ease,
     transform 150ms ease;
 }
 
+/* Visual feedback when hovering over a job card. */
 .job-card:hover {
   border-color: #bbbbbb;
   box-shadow: var(--shadow);
+
+  /* Move card upward by 2px. */
   transform: translateY(-2px);
 }
 
+/* Job title inside a card. */
 .job-title {
-  margin: 0 0 5px;
+  margin: 0 0 5px; /* Only 5px bottom margin. */
   font-size: 20px;
 }
 
+/* Company name inside a card/modal. */
 .job-company {
   margin: 0 0 16px;
   color: var(--muted-text);
 }
 
+/* Row containing location, salary, etc. */
 .job-metadata {
   display: flex;
   align-items: center;
   justify-content: flex-start;
+
   gap: 14px;
   font-size: 14px;
   font-weight: 600;
 }
 
+/* "View details" / external-job link appearance. */
 .details-button {
   display: block;
   margin-top: 12px;
   padding: 0;
+
   color: var(--text);
   font-weight: 700;
   background: transparent;
+
   border: 0;
   text-decoration: underline;
   cursor: pointer;
 }
 
+/* Column containing the Plotly map. */
 .map-column {
   height: 650px;
   min-height: 0;
 }
 
+/* Plotly job map. */
 .job-map {
   height: 100%;
   min-height: 0;
+
+  /* Prevent Plotly content from extending outside rounded corners. */
   overflow: hidden;
+
   border-radius: 18px;
   box-shadow: var(--shadow);
 }
 
+/* Internal elements generated by Plotly. Force them to occupy the full height of .job-map. */
 .job-map .js-plotly-plot,
 .job-map .plot-container,
 .job-map .svg-container {
   height: 100% !important;
 }
 
-@media (max-width: 950px) {
-  .navigation {
-    display: none;
-  }
+/* #endregion */
 
-  .page-header {
-    grid-template-columns: 1fr auto;
-  }
-
-  .search-panel {
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-  }
-
-  .search-field {
-    border-right: 0;
-  }
-
-  .search-button {
-    grid-column: span 2;
-  }
-
-  .content-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .map-column {
-    min-height: auto;
-  }
-
-  .job-map {
-    position: static;
-    height: 440px;
-    min-height: 440px;
-  }
-}
-
-@media (max-width: 600px) {
-  .page-header,
-  .hero,
-  .results-section {
-    padding-right: 20px;
-    padding-left: 20px;
-  }
-
-  .search-panel {
-    grid-template-columns: 1fr;
-  }
-
-  .search-field {
-    padding: 10px 14px;
-    border-bottom: 1px solid var(--border);
-  }
-
-  .search-button {
-    grid-column: auto;
-  }
-
-  .job-metadata {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 5px;
-  }
-}
-
+/* Container for previous/next pagination controls. */
 .pagination {
   display: flex;
-  align-items: center;
+  align-items: center; /* Vertically align buttons and page number. */
+
+  /* Push previous button left, page number center and next button right. */
   justify-content: space-between;
 
+  /* 40px above, 20px left/right, no bottom margin. */
   margin: 40px 20px 0;
 }
 
+/* Previous and Next pagination buttons. */
 .pagination button {
   width: 40px;
   height: 40px;
@@ -334,43 +376,68 @@ a {
   cursor: pointer;
 }
 
+/* Hover style, but only when the button is not disabled. */
 .pagination button:hover:not(:disabled) {
   background: #f5f5f5;
 }
 
+/* Appearance of unavailable Previous/Next buttons. */
 .pagination button:disabled {
   opacity: 0.35;
   cursor: default;
 }
 
+/* Current "Page N" text. */
 #page-number {
   font-size: 14px;
   font-weight: 500;
 }
 
+/* #endregion */
+
+/* #region Job details modal */
+
+/* Full-screen background behind the job-details modal. (Hidden by default.) */
 .modal-overlay {
   display: none;
+
+  /* Position relative to the browser viewport, not document flow. */
   position: fixed;
+
+  /* Equivalent to top/right/bottom/left: 0;
+     makes the overlay fill the entire viewport. */
   inset: 0;
+
+  /* Semi-transparent black background. */
   background: rgba(0, 0, 0, 0.45);
+
+  /* Ensure modal appears above header and normal page content. */
   z-index: 1000;
 
   align-items: center;
   justify-content: center;
 }
 
+/* When the callback adds the "open" class, display the overlay.
+   Because it is flex, the modal becomes centered by the rules above. */
 .modal-overlay.open {
   display: flex;
 }
 
+/* Actual white job-details window inside the overlay. */
 .job-modal {
+  /* Establish positioning context for the absolute close button. */
   position: relative;
+
+  /* Use the smaller of 700px or 90% of viewport width. */
   width: min(700px, 90vw);
+
   background: white;
   border-radius: 12px;
   padding: 28px;
 }
 
+/* X button in the top-right corner of the modal. */
 .modal-close-button {
   position: absolute;
   top: 12px;
@@ -378,49 +445,50 @@ a {
 
   border: none;
   background: none;
+
   font-size: 36px;
   cursor: pointer;
 }
 
+/* Description area inside the job modal. */
 .job-description {
+  /* Description can occupy at most 45% of viewport height. */
   max-height: 45vh;
+
+  /* Only the description scrolls when it becomes too long. */
   overflow-y: auto;
+
+  /* Keep text slightly separated from the scrollbar. */
   padding-right: 12px;
 }
 
-.navigation-tab {
-  padding: 27px 0 12px;
-  color: var(--muted-text);
-  background: transparent;
-  border: 0;
-  cursor: pointer;
-}
+/* #endregion */
 
-.navigation-tab:hover,
-.navigation-tab.active {
-  color: var(--text);
-}
+/* #region Statistics tab */
 
-.navigation-tab.active {
-  border-bottom: 2px solid var(--text);
-}
-
+/* Main container of the Statistics tab. */
 .statistics-page {
   padding: 32px 5% 50px;
 }
 
+/* Statistics content is limited to the same maximum width as job results. */
 #statistics-content {
   max-width: 1500px;
   margin: 0 auto;
 }
 
+/* Grid containing the four overview statistics cards. */
 .statistics-overview {
   display: grid;
+
+  /* Four equally wide columns. */
   grid-template-columns: repeat(4, 1fr);
+
   gap: 16px;
   margin-bottom: 32px;
 }
 
+/* Individual statistics overview card. */
 .statistics-card {
   padding: 20px;
   border: 1px solid var(--border);
@@ -428,14 +496,102 @@ a {
   background: var(--surface);
 }
 
+/* Heading inside a statistics card, e.g. "Jobs". */
 .statistics-card h3 {
   margin: 0 0 8px;
   color: var(--muted-text);
   font-size: 14px;
 }
 
+/* Main value inside a statistics card, e.g. "296". */
 .statistics-card p {
   margin: 0;
   font-size: 22px;
   font-weight: 700;
 }
+
+/* #endregion */
+
+/* #region Responsive layout for smaller screens */
+
+/* Responsive rules for screens up to 950px wide. */
+@media (max-width: 950px) {
+  /* Hide top navigation on narrower screens. */
+  .navigation {
+    display: none;
+  }
+
+  /* Reduce header from three grid columns to two. */
+  .page-header {
+    grid-template-columns: 1fr auto;
+  }
+
+  /* Arrange search fields into two columns. */
+  .search-panel {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  /* Vertical field separators no longer make sense here. */
+  .search-field {
+    border-right: 0;
+  }
+
+  /* Search button spans both grid columns. */
+  .search-button {
+    grid-column: span 2;
+  }
+
+  /* Stack job list and map instead of showing them side by side. */
+  .search-results-content-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .map-column {
+    min-height: auto;
+  }
+
+  /* Give the stacked map an explicit height. */
+  .job-map {
+    position: static;
+    height: 440px;
+    min-height: 440px;
+  }
+}
+
+/* Additional responsive rules for phones up to 600px wide. */
+@media (max-width: 600px) {
+  /* Replace percentage-based horizontal spacing with fixed 20px padding. */
+  .page-header,
+  .tab-header,
+  .results-section {
+    padding-right: 20px;
+    padding-left: 20px;
+  }
+
+  /* Stack all search fields vertically. */
+  .search-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .search-field {
+    padding: 10px 14px;
+
+    /* Horizontal separator between vertically stacked fields. */
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* Search button no longer needs to span multiple columns. */
+  .search-button {
+    grid-column: auto;
+  }
+
+  /* Stack metadata such as location and salary vertically. */
+  .job-metadata {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 5px;
+  }
+}
+
+/* #endregion */

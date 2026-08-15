@@ -241,7 +241,7 @@ def _get_statistics() -> tuple[dict, list, list, dict]:
     )
 
 
-def _create_statistics_content() -> list:
+def _create_statistics_content() -> tuple[html.Div, list[dcc.Graph]]:
     overview, companies, locations, home_office = _get_statistics()
 
     overview_cards = html.Div(
@@ -320,8 +320,7 @@ def _create_statistics_content() -> list:
         title="Home office",
     )
 
-    return [
-        overview_cards,
+    return overview_cards, [
         dcc.Graph(figure=companies_figure),
         dcc.Graph(figure=locations_figure),
         dcc.Graph(figure=home_office_figure),
@@ -376,7 +375,7 @@ app.layout = html.Div(
                             [
                                 html.P(
                                     "Explore jobs from companies across Germany.",
-                                    className="hero-subtitle",
+                                    className="tab-subtitle",
                                 ),
                                 html.Div(
                                     [
@@ -422,7 +421,7 @@ app.layout = html.Div(
                                     className="search-panel",
                                 ),
                             ],
-                            className="hero",
+                            className="tab-header",
                         ),
                         html.Section(
                             [
@@ -468,19 +467,33 @@ app.layout = html.Div(
                                             className="map-column",
                                         ),
                                     ],
-                                    className="content-grid",
+                                    className="search-results-content-grid",
                                 ),
                             ],
-                            className="results-section",
+                            className="search-results-section",
                         ),
                     ],
                 ),
                 html.Div(
                     id="statistics-page",
                     children=[
-                        html.Div(id="statistics-content"),
+                        html.Section(
+                            [
+                                html.P(
+                                    "Overview of the collected job market data.",
+                                    className="tab-subtitle",
+                                ),
+                                html.Div(
+                                    id="statistics-overview-content",
+                                ),
+                            ],
+                            className="tab-header",
+                        ),
+                        html.Div(
+                            id="statistics-content",
+                            className="statistics-content",
+                        ),
                     ],
-                    className="statistics-page",
                     style={"display": "none"},
                 ),
             ]
@@ -512,18 +525,22 @@ app.layout = html.Div(
     Output("statistics-page", "style"),
     Output("find-jobs-tab", "className"),
     Output("statistics-tab", "className"),
+    Output("statistics-overview-content", "children"),
     Output("statistics-content", "children"),
     Input("find-jobs-tab", "n_clicks"),
     Input("statistics-tab", "n_clicks"),
 )
 def switch_tab(find_jobs_clicks, statistics_clicks):
     if ctx.triggered_id == "statistics-tab":
+        overview, statistics = _create_statistics_content()
+
         return (
             {"display": "none"},
             {"display": "block"},
             "navigation-tab",
             "navigation-tab active",
-            _create_statistics_content(),
+            overview,
+            statistics,
         )
 
     return (
@@ -531,6 +548,7 @@ def switch_tab(find_jobs_clicks, statistics_clicks):
         {"display": "none"},
         "navigation-tab active",
         "navigation-tab",
+        no_update,
         no_update,
     )
 
