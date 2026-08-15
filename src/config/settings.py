@@ -22,7 +22,7 @@ JOB_DETAIL_FAILURES_FILE_NAME = "job-detail-failures.json"
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql://job_market:job_market@localhost:5432/job_market",
+    "postgresql+psycopg://job_market:job_market@localhost:5432/job_market",
 )
 
 

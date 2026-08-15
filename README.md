@@ -109,18 +109,26 @@ data
 
 ### Local Development
 
-> **Note:** The Python application can run locally, but PostgreSQL is required. If PostgreSQL is not installed locally, start only the PostgreSQL Docker service with `docker compose up -d postgres`.
-
 #### Setup Python
 
 ```sh
 python -m venv .venv
-source .venv\bin\activate
+source .venv/bin/activate
 python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-#### Create or update database with recent jobs
+> **Note:** If on Windows, run `.venv\Scripts\Activate.ps1` instead of `source .venv\bin\activate`.
+
+#### Start PostgreSQL
+
+> **Note:** Make sure no other containers from this project (aside from PostgreSQL) are running. If necessary, stop the full Docker deployment with `docker compose down` before running the next command.
+
+```sh
+docker compose up -d postgres
+```
+
+#### Create or update the database with recent jobs
 
 ```sh
 python -m src.data.etl.etl --keyword "Data Engineer" --keyword "AI Engineer"
@@ -132,13 +140,13 @@ python -m src.data.etl.etl --keyword "Data Engineer" --keyword "AI Engineer"
 python -m uvicorn src.api.main:api --reload
 ```
 
-#### Start the Dash frontend:
+#### Start the Dash frontend
 
 ```sh
 python -m src.dashboard.app
 ```
 
-### With Docker
+### Deployment with Docker
 
 Start the application:
 
