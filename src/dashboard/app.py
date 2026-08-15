@@ -114,7 +114,11 @@ def _create_map(jobs: list[dict]) -> Figure:
             "latitude": False,
             "longitude": False,
         },
-        custom_data=["reference_number"],
+        custom_data=[
+            "reference_number",
+            "company",
+            "city",
+        ],
         zoom=4,
         center={"lat": 51.1, "lon": 10.4},
         map_style="open-street-map",
@@ -124,7 +128,13 @@ def _create_map(jobs: list[dict]) -> Figure:
         marker={
             "size": 18,
             "color": "#ff385c",
-        }
+        },
+        hovertemplate=(
+            "<b>%{hovertext}</b><br>"
+            "Company: %{customdata[1]}<br>"
+            "City: %{customdata[2]}"
+            "<extra></extra>"
+        ),
     )
 
     figure.update_layout(
@@ -625,25 +635,31 @@ def search_jobs(
         },
         "n_clicks",
     ),
+    Input("job-map", "clickData"),
     Input("close-job-modal", "n_clicks"),
     prevent_initial_call=True,
 )
 def toggle_job_modal(
-    job_clicks: list[int | None],
-    close_clicks: int | None,
+    job_clicks,
+    map_click,
+    close_clicks,
 ):
     triggered_id = ctx.triggered_id
 
     if triggered_id == "close-job-modal":
         return "modal-overlay", []
 
-    if not isinstance(triggered_id, dict):
-        return no_update, no_update
+    if triggered_id == "job-map":
+        reference_number = map_click["points"][0]["customdata"][0]
 
-    if not any(job_clicks):
-        return no_update, no_update
+    elif isinstance(triggered_id, dict):
+        if not any(job_clicks):
+            return no_update, no_update
 
-    reference_number = triggered_id["index"]
+        reference_number = triggered_id["index"]
+
+    else:
+        return no_update, no_update
 
     try:
         response = requests.get(
