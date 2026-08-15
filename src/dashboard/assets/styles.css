@@ -313,3 +313,37 @@ a {
     gap: 5px;
   }
 }
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  margin: 40px 20px 0;
+}
+
+.pagination button {
+  width: 40px;
+  height: 40px;
+
+  border: 1px solid #d0d0d0;
+  border-radius: 8px;
+  background: white;
+
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.pagination button:hover:not(:disabled) {
+  background: #f5f5f5;
+}
+
+.pagination button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+#page-number {
+  font-size: 14px;
+  font-weight: 500;
+}

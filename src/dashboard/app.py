@@ -6,9 +6,9 @@ from pathlib import Path
 import pandas as pd
 import plotly.express as px
 from plotly.graph_objects import Figure
-from dash import Dash, Input, Output, State, dcc, html
+from dash import Dash, Input, Output, State, ctx, dcc, html
 
-from src.config.settings import FASTAPI_URL, FRONTEND_PORT
+from src.config.settings import DASH_DEBUG, FASTAPI_URL, FRONTEND_PORT, JOBS_PAGE_SIZE
 
 ASSETS_DIRECTORY = Path(__file__).parent / "assets"
 
@@ -18,51 +18,8 @@ app = Dash(
     title="Job Market",
 )
 
-DUMMY_JOBS = [
-    {
-        "reference_number": "JOB-001",
-        "title": "Senior Data Engineer",
-        "company": "FERCHAU GmbH",
-        "city": "Berlin",
-        "work_model": "Remote",
-        "salary": "€70,000–€85,000",
-        "latitude": 52.5200,
-        "longitude": 13.4050,
-    },
-    {
-        "reference_number": "JOB-002",
-        "title": "Python Backend Developer",
-        "company": "TechWorks AG",
-        "city": "Hamburg",
-        "work_model": "Hybrid",
-        "salary": "€65,000–€78,000",
-        "latitude": 53.5511,
-        "longitude": 9.9937,
-    },
-    {
-        "reference_number": "JOB-003",
-        "title": "AI Software Engineer",
-        "company": "Intelligence Labs",
-        "city": "Munich",
-        "work_model": "Remote",
-        "salary": "€80,000–€95,000",
-        "latitude": 48.1351,
-        "longitude": 11.5820,
-    },
-    {
-        "reference_number": "JOB-004",
-        "title": "Data Analyst",
-        "company": "Analytics Solutions",
-        "city": "Cologne",
-        "work_model": "On-site",
-        "salary": "€55,000–€68,000",
-        "latitude": 50.9375,
-        "longitude": 6.9603,
-    },
-]
 
-
-def format_salary(job: dict) -> str | None:
+def _format_salary(job: dict) -> str | None:
     """Format the available salary information."""
 
     salary_min = job.get("salary_min")
@@ -84,7 +41,7 @@ def format_salary(job: dict) -> str | None:
     return salary
 
 
-def create_job_card(job: dict) -> html.Article:
+def _create_job_card(job: dict) -> html.Article:
     """Create a card for one job-search result."""
 
     metadata = []
@@ -92,7 +49,7 @@ def create_job_card(job: dict) -> html.Article:
     if job.get("city"):
         metadata.append(html.Span(f"⌖ {job['city']}"))
 
-    salary = format_salary(job)
+    salary = _format_salary(job)
 
     if salary:
         metadata.append(html.Span(salary))
@@ -117,7 +74,7 @@ def create_job_card(job: dict) -> html.Article:
     )
 
 
-def create_map(jobs: list[dict]) -> Figure:
+def _create_map(jobs: list[dict]) -> Figure:
     """Create a map containing the available job locations."""
 
     jobs_with_coordinates = [
@@ -179,6 +136,10 @@ def create_map(jobs: list[dict]) -> Figure:
 
 app.layout = html.Div(
     [
+        dcc.Store(
+            id="current-page",
+            data=1,
+        ),
         html.Header(
             [
                 html.A(
@@ -264,13 +225,31 @@ app.layout = html.Div(
                                             id="job-list",
                                             className="job-list",
                                         ),
+                                        html.Div(
+                                            [
+                                                html.Button(
+                                                    "‹",
+                                                    id="previous-page-button",
+                                                    disabled=True,
+                                                ),
+                                                html.Span(
+                                                    "Page 1",
+                                                    id="page-number",
+                                                ),
+                                                html.Button(
+                                                    "›",
+                                                    id="next-page-button",
+                                                ),
+                                            ],
+                                            className="pagination",
+                                        ),
                                     ],
                                     className="results-column",
                                 ),
                                 html.Div(
                                     dcc.Graph(
                                         id="job-map",
-                                        figure=create_map([]),
+                                        figure=_create_map([]),
                                         config={
                                             "displayModeBar": False,
                                             "scrollZoom": True,
@@ -295,21 +274,41 @@ app.layout = html.Div(
 @app.callback(
     Output("job-list", "children"),
     Output("job-map", "figure"),
+    Output("current-page", "data"),
+    Output("page-number", "children"),
+    Output("previous-page-button", "disabled"),
+    Output("next-page-button", "disabled"),
     Input("search-button", "n_clicks"),
+    Input("previous-page-button", "n_clicks"),
+    Input("next-page-button", "n_clicks"),
+    State("current-page", "data"),
     State("keyword-input", "value"),
     State("location-input", "value"),
     State("company-input", "value"),
 )
 def search_jobs(
-    n_clicks: int | None,
+    search_clicks: int | None,
+    previous_clicks: int | None,
+    next_clicks: int | None,
+    current_page: int,
     keyword: str | None,
     city: str | None,
     company: str | None,
-) -> tuple[list, Figure]:
+):
     """Retrieve jobs from FastAPI and update the results."""
 
+    if ctx.triggered_id == "search-button":
+        current_page = 1
+    elif ctx.triggered_id == "previous-page-button":
+        current_page = max(1, current_page - 1)
+    elif ctx.triggered_id == "next-page-button":
+        current_page += 1
+
+    offset = (current_page - 1) * JOBS_PAGE_SIZE
+
     parameters: dict[str, str | int] = {
-        "limit": 100,
+        "limit": JOBS_PAGE_SIZE + 1,
+        "offset": offset,
     }
 
     if keyword:
@@ -333,20 +332,33 @@ def search_jobs(
             "The job API is currently unavailable.",
             className="error-message",
         )
-        return [message], create_map([])
+        return [message], _create_map([])
 
     jobs = response.json()
+
+    has_next_page = len(jobs) > JOBS_PAGE_SIZE
+    jobs = jobs[:JOBS_PAGE_SIZE]
+
+    previous_disabled = current_page == 1
+    next_disabled = not has_next_page
 
     if not jobs:
         message = html.P(
             "No matching jobs were found.",
             className="empty-message",
         )
-        return [message], create_map([])
+        return [message], _create_map([])
 
-    cards = [create_job_card(job) for job in jobs]
+    cards = [_create_job_card(job) for job in jobs]
 
-    return cards, create_map(jobs)
+    return (
+        cards,
+        _create_map(jobs),
+        current_page,
+        f"Page {current_page}",
+        previous_disabled,
+        next_disabled,
+    )
 
 
 if __name__ == "__main__":
@@ -356,5 +368,5 @@ if __name__ == "__main__":
     app.run(
         host="0.0.0.0",
         port=FRONTEND_PORT,
-        debug=False,
+        debug=DASH_DEBUG,
     )

@@ -25,8 +25,14 @@ DATABASE_URL = os.getenv(
     "postgresql+psycopg://job_market:job_market@localhost:5432/job_market",
 )
 
+DASH_DEBUG = os.getenv("DASH_DEBUG", "true").lower() == "true"
 
+# Arbeitsagentur API / ETL
 DEFAULT_JOB_SEARCH_KEYWORDS = ("Data Engineer", "Data Analyst")
-FIRST_PAGE = 1
-NUMBER_OF_PAGES = 3
-JOBS_PER_PAGE = 50
+API_START_PAGE = 1
+API_REQUEST_PAGE_SIZE = 50
+NUM_API_REQUESTS_PER_SEARCH = 3
+
+
+# Dashboard
+JOBS_PAGE_SIZE = 20

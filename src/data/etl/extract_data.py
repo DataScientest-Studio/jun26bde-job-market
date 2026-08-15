@@ -8,12 +8,12 @@ from typing import Any
 import requests
 
 from src.config.settings import (
-    FIRST_PAGE,
+    API_START_PAGE,
     JOB_DETAIL_FAILURES_FILE_NAME,
     JOB_DETAILS_FILE_NAME,
-    JOBS_PER_PAGE,
+    API_REQUEST_PAGE_SIZE,
     DEFAULT_JOB_SEARCH_KEYWORDS,
-    NUMBER_OF_PAGES,
+    NUM_API_REQUESTS_PER_SEARCH,
     RAW_DATA_DIRECTORY,
 )
 from src.data.arbeitsagentur_client import ArbeitsagenturClient
@@ -158,9 +158,9 @@ def extract_data(keywords: tuple[str, ...]) -> Path:
     job_summaries = _search_jobs(
         client,
         keywords=keywords,
-        first_page=FIRST_PAGE,
-        number_of_pages=NUMBER_OF_PAGES,
-        jobs_per_page=JOBS_PER_PAGE,
+        first_page=API_START_PAGE,
+        number_of_pages=NUM_API_REQUESTS_PER_SEARCH,
+        jobs_per_page=API_REQUEST_PAGE_SIZE,
         output_directory=output_directory,
     )
 
