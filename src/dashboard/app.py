@@ -6,7 +6,7 @@ from pathlib import Path
 import pandas as pd
 import plotly.express as px
 from plotly.graph_objects import Figure
-from dash import Dash, Input, Output, State, ctx, dcc, html
+from dash import ALL, Dash, Input, Output, State, ctx, dcc, html, no_update
 
 from src.config.settings import DASH_DEBUG, FASTAPI_URL, FRONTEND_PORT, JOBS_PAGE_SIZE
 
@@ -132,6 +132,68 @@ def _create_map(jobs: list[dict]) -> Figure:
     )
 
     return figure
+
+
+def _format_location(location: dict) -> str:
+    parts = [
+        location.get("postal_code"),
+        location.get("city"),
+        location.get("region"),
+        location.get("country"),
+    ]
+
+    return ", ".join(str(part) for part in parts if part)
+
+
+def _create_job_modal_content(job: dict) -> list:
+    salary = _format_salary(job)
+
+    locations = [
+        html.Li(_format_location(location)) for location in job.get("locations", [])
+    ]
+
+    content = [
+        html.H2(job["title"]),
+        html.P(
+            job.get("company") or "Company not specified",
+            className="job-company",
+        ),
+    ]
+
+    if salary:
+        content.append(html.P(salary))
+
+    if locations:
+        content.extend(
+            [
+                html.H3("Locations"),
+                html.Ul(locations),
+            ]
+        )
+
+    if job.get("description"):
+        content.append(
+            html.Div(
+                [
+                    html.H3("Description"),
+                    html.P(job["description"]),
+                ],
+                className="job-description",
+            )
+        )
+
+    if job.get("external_url"):
+        content.append(
+            html.A(
+                "Open job advertisement",
+                href=job["external_url"],
+                target="_blank",
+                rel="noopener noreferrer",
+                className="details-button",
+            )
+        )
+
+    return content
 
 
 app.layout = html.Div(
@@ -266,6 +328,23 @@ app.layout = html.Div(
                 ),
             ]
         ),
+        html.Div(
+            [
+                html.Div(
+                    [
+                        html.Button(
+                            "×",
+                            id="close-job-modal",
+                            className="modal-close-button",
+                        ),
+                        html.Div(id="job-modal-content"),
+                    ],
+                    className="job-modal",
+                ),
+            ],
+            id="job-modal-overlay",
+            className="modal-overlay",
+        ),
     ],
     className="page",
 )
@@ -358,6 +437,56 @@ def search_jobs(
         f"Page {current_page}",
         previous_disabled,
         next_disabled,
+    )
+
+
+@app.callback(
+    Output("job-modal-overlay", "className"),
+    Output("job-modal-content", "children"),
+    Input(
+        {
+            "type": "job-card-button",
+            "index": ALL,
+        },
+        "n_clicks",
+    ),
+    Input("close-job-modal", "n_clicks"),
+    prevent_initial_call=True,
+)
+def toggle_job_modal(
+    job_clicks: list[int | None],
+    close_clicks: int | None,
+):
+    triggered_id = ctx.triggered_id
+
+    if triggered_id == "close-job-modal":
+        return "modal-overlay", []
+
+    if not isinstance(triggered_id, dict):
+        return no_update, no_update
+
+    if not any(job_clicks):
+        return no_update, no_update
+
+    reference_number = triggered_id["index"]
+
+    try:
+        response = requests.get(
+            f"{FASTAPI_URL}/jobs/{reference_number}",
+            timeout=10,
+        )
+        response.raise_for_status()
+    except requests.RequestException:
+        return (
+            "modal-overlay open",
+            html.P("The job details could not be loaded."),
+        )
+
+    job = response.json()
+
+    return (
+        "modal-overlay open",
+        _create_job_modal_content(job),
     )
 
 
