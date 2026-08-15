@@ -349,8 +349,6 @@ a {
   height: 100% !important;
 }
 
-/* #endregion */
-
 /* Container for previous/next pagination controls. */
 .pagination {
   display: flex;
@@ -467,14 +465,10 @@ a {
 /* #region Statistics tab */
 
 /* Main container of the Statistics tab. */
-.statistics-page {
-  padding: 32px 5% 50px;
-}
-
-/* Statistics content is limited to the same maximum width as job results. */
-#statistics-content {
+.statistics-content {
   max-width: 1500px;
   margin: 0 auto;
+  padding: 32px 5% 50px;
 }
 
 /* Grid containing the four overview statistics cards. */
