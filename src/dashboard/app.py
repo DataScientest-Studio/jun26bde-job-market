@@ -196,6 +196,128 @@ def _create_job_modal_content(job: dict) -> list:
     return content
 
 
+def _get_statistics() -> tuple[dict, list, list, dict]:
+    overview = requests.get(
+        f"{FASTAPI_URL}/statistics/overview",
+        timeout=10,
+    )
+    overview.raise_for_status()
+
+    companies = requests.get(
+        f"{FASTAPI_URL}/statistics/companies",
+        params={"limit": 10},
+        timeout=10,
+    )
+    companies.raise_for_status()
+
+    locations = requests.get(
+        f"{FASTAPI_URL}/statistics/locations",
+        params={"limit": 10},
+        timeout=10,
+    )
+    locations.raise_for_status()
+
+    home_office = requests.get(
+        f"{FASTAPI_URL}/statistics/home-office",
+        timeout=10,
+    )
+    home_office.raise_for_status()
+
+    return (
+        overview.json(),
+        companies.json(),
+        locations.json(),
+        home_office.json(),
+    )
+
+
+def _create_statistics_content() -> list:
+    overview, companies, locations, home_office = _get_statistics()
+
+    overview_cards = html.Div(
+        [
+            html.Div(
+                [
+                    html.H3("Jobs"),
+                    html.P(overview["total_jobs"]),
+                ],
+                className="statistics-card",
+            ),
+            html.Div(
+                [
+                    html.H3("Companies"),
+                    html.P(overview["total_companies"]),
+                ],
+                className="statistics-card",
+            ),
+            html.Div(
+                [
+                    html.H3("Locations"),
+                    html.P(overview["total_locations"]),
+                ],
+                className="statistics-card",
+            ),
+            html.Div(
+                [
+                    html.H3("Period"),
+                    html.P(
+                        f"{overview['earliest_publication_date']} – "
+                        f"{overview['latest_publication_date']}"
+                    ),
+                ],
+                className="statistics-card",
+            ),
+        ],
+        className="statistics-overview",
+    )
+
+    companies_frame = pd.DataFrame(companies)
+
+    companies_figure = px.bar(
+        companies_frame,
+        x="job_count",
+        y="company",
+        orientation="h",
+        title="Top companies",
+    )
+
+    locations_frame = pd.DataFrame(locations)
+
+    locations_figure = px.bar(
+        locations_frame,
+        x="job_count",
+        y="city",
+        orientation="h",
+        title="Top locations",
+    )
+
+    home_office_frame = pd.DataFrame(
+        {
+            "status": ["Possible", "Not possible", "Unknown"],
+            "count": [
+                home_office["possible"],
+                home_office["not_possible"],
+                home_office["unknown"],
+            ],
+        }
+    )
+
+    home_office_figure = px.pie(
+        home_office_frame,
+        names="status",
+        values="count",
+        hole=0.5,
+        title="Home office",
+    )
+
+    return [
+        overview_cards,
+        dcc.Graph(figure=companies_figure),
+        dcc.Graph(figure=locations_figure),
+        dcc.Graph(figure=home_office_figure),
+    ]
+
+
 app.layout = html.Div(
     [
         dcc.Store(
@@ -214,9 +336,21 @@ app.layout = html.Div(
                 ),
                 html.Nav(
                     [
-                        html.A("Find jobs", href="#", className="active"),
-                        html.A("Statistics", href="#"),
-                        html.A("About", href="#"),
+                        html.Button(
+                            "Find jobs",
+                            id="find-jobs-tab",
+                            className="navigation-tab active",
+                        ),
+                        html.Button(
+                            "Statistics",
+                            id="statistics-tab",
+                            className="navigation-tab",
+                        ),
+                        html.Button(
+                            "About",
+                            id="about-tab",
+                            className="navigation-tab",
+                        ),
                     ],
                     className="navigation",
                 ),
@@ -225,106 +359,119 @@ app.layout = html.Div(
         ),
         html.Main(
             [
-                html.Section(
-                    [
-                        html.P(
-                            "Explore jobs from companies across Germany.",
-                            className="hero-subtitle",
-                        ),
-                        html.Div(
+                html.Div(
+                    id="find-jobs-page",
+                    children=[
+                        html.Section(
                             [
-                                html.Div(
-                                    [
-                                        html.Label("What"),
-                                        dcc.Input(
-                                            id="keyword-input",
-                                            type="text",
-                                            placeholder="Job title or keyword",
-                                        ),
-                                    ],
-                                    className="search-field",
+                                html.P(
+                                    "Explore jobs from companies across Germany.",
+                                    className="hero-subtitle",
                                 ),
-                                html.Div(
-                                    [
-                                        html.Label("Where"),
-                                        dcc.Input(
-                                            id="location-input",
-                                            type="text",
-                                            placeholder="City or remote",
-                                        ),
-                                    ],
-                                    className="search-field",
-                                ),
-                                html.Div(
-                                    [
-                                        html.Label("Company"),
-                                        dcc.Input(
-                                            id="company-input",
-                                            type="text",
-                                            placeholder="Any company",
-                                        ),
-                                    ],
-                                    className="search-field",
-                                ),
-                                html.Button(
-                                    "Search",
-                                    id="search-button",
-                                    className="search-button",
-                                ),
-                            ],
-                            className="search-panel",
-                        ),
-                    ],
-                    className="hero",
-                ),
-                html.Section(
-                    [
-                        html.Div(
-                            [
                                 html.Div(
                                     [
                                         html.Div(
-                                            id="job-list",
-                                            className="job-list",
+                                            [
+                                                html.Label("What"),
+                                                dcc.Input(
+                                                    id="keyword-input",
+                                                    type="text",
+                                                    placeholder="Job title or keyword",
+                                                ),
+                                            ],
+                                            className="search-field",
                                         ),
                                         html.Div(
                                             [
-                                                html.Button(
-                                                    "‹",
-                                                    id="previous-page-button",
-                                                    disabled=True,
-                                                ),
-                                                html.Span(
-                                                    "Page 1",
-                                                    id="page-number",
-                                                ),
-                                                html.Button(
-                                                    "›",
-                                                    id="next-page-button",
+                                                html.Label("Where"),
+                                                dcc.Input(
+                                                    id="location-input",
+                                                    type="text",
+                                                    placeholder="City or remote",
                                                 ),
                                             ],
-                                            className="pagination",
+                                            className="search-field",
+                                        ),
+                                        html.Div(
+                                            [
+                                                html.Label("Company"),
+                                                dcc.Input(
+                                                    id="company-input",
+                                                    type="text",
+                                                    placeholder="Any company",
+                                                ),
+                                            ],
+                                            className="search-field",
+                                        ),
+                                        html.Button(
+                                            "Search",
+                                            id="search-button",
+                                            className="search-button",
                                         ),
                                     ],
-                                    className="results-column",
-                                ),
-                                html.Div(
-                                    dcc.Graph(
-                                        id="job-map",
-                                        figure=_create_map([]),
-                                        config={
-                                            "displayModeBar": False,
-                                            "scrollZoom": True,
-                                        },
-                                        className="job-map",
-                                    ),
-                                    className="map-column",
+                                    className="search-panel",
                                 ),
                             ],
-                            className="content-grid",
+                            className="hero",
+                        ),
+                        html.Section(
+                            [
+                                html.Div(
+                                    [
+                                        html.Div(
+                                            [
+                                                html.Div(
+                                                    id="job-list",
+                                                    className="job-list",
+                                                ),
+                                                html.Div(
+                                                    [
+                                                        html.Button(
+                                                            "‹",
+                                                            id="previous-page-button",
+                                                            disabled=True,
+                                                        ),
+                                                        html.Span(
+                                                            "Page 1",
+                                                            id="page-number",
+                                                        ),
+                                                        html.Button(
+                                                            "›",
+                                                            id="next-page-button",
+                                                        ),
+                                                    ],
+                                                    className="pagination",
+                                                ),
+                                            ],
+                                            className="results-column",
+                                        ),
+                                        html.Div(
+                                            dcc.Graph(
+                                                id="job-map",
+                                                figure=_create_map([]),
+                                                config={
+                                                    "displayModeBar": False,
+                                                    "scrollZoom": True,
+                                                },
+                                                className="job-map",
+                                            ),
+                                            className="map-column",
+                                        ),
+                                    ],
+                                    className="content-grid",
+                                ),
+                            ],
+                            className="results-section",
                         ),
                     ],
-                    className="results-section",
+                ),
+                html.Div(
+                    id="statistics-page",
+                    children=[
+                        html.Div(id="statistics-content"),
+                    ],
+                    className="statistics-page",
+                    style={"display": "none"},
                 ),
             ]
         ),
@@ -348,6 +495,34 @@ app.layout = html.Div(
     ],
     className="page",
 )
+
+
+@app.callback(
+    Output("find-jobs-page", "style"),
+    Output("statistics-page", "style"),
+    Output("find-jobs-tab", "className"),
+    Output("statistics-tab", "className"),
+    Output("statistics-content", "children"),
+    Input("find-jobs-tab", "n_clicks"),
+    Input("statistics-tab", "n_clicks"),
+)
+def switch_tab(find_jobs_clicks, statistics_clicks):
+    if ctx.triggered_id == "statistics-tab":
+        return (
+            {"display": "none"},
+            {"display": "block"},
+            "navigation-tab",
+            "navigation-tab active",
+            _create_statistics_content(),
+        )
+
+    return (
+        {"display": "block"},
+        {"display": "none"},
+        "navigation-tab active",
+        "navigation-tab",
+        no_update,
+    )
 
 
 @app.callback(

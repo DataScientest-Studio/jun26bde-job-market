@@ -349,41 +349,93 @@ a {
 }
 
 .modal-overlay {
-    display: none;
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.45);
-    z-index: 1000;
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 1000;
 
-    align-items: center;
-    justify-content: center;
+  align-items: center;
+  justify-content: center;
 }
 
 .modal-overlay.open {
-    display: flex;
+  display: flex;
 }
 
 .job-modal {
-    position: relative;
-    width: min(700px, 90vw);
-    background: white;
-    border-radius: 12px;
-    padding: 28px;
+  position: relative;
+  width: min(700px, 90vw);
+  background: white;
+  border-radius: 12px;
+  padding: 28px;
 }
 
 .modal-close-button {
-    position: absolute;
-    top: 12px;
-    right: 16px;
+  position: absolute;
+  top: 12px;
+  right: 16px;
 
-    border: none;
-    background: none;
-    font-size: 36px;
-    cursor: pointer;
+  border: none;
+  background: none;
+  font-size: 36px;
+  cursor: pointer;
 }
 
 .job-description {
-    max-height: 45vh;
-    overflow-y: auto;
-    padding-right: 12px;
+  max-height: 45vh;
+  overflow-y: auto;
+  padding-right: 12px;
+}
+
+.navigation-tab {
+  padding: 27px 0 12px;
+  color: var(--muted-text);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.navigation-tab:hover,
+.navigation-tab.active {
+  color: var(--text);
+}
+
+.navigation-tab.active {
+  border-bottom: 2px solid var(--text);
+}
+
+.statistics-page {
+  padding: 32px 5% 50px;
+}
+
+#statistics-content {
+  max-width: 1500px;
+  margin: 0 auto;
+}
+
+.statistics-overview {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 32px;
+}
+
+.statistics-card {
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+}
+
+.statistics-card h3 {
+  margin: 0 0 8px;
+  color: var(--muted-text);
+  font-size: 14px;
+}
+
+.statistics-card p {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
 }
