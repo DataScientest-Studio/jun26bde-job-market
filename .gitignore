@@ -88,11 +88,3 @@ target/
 
 # Mypy cache
 .mypy_cache/
-
-# Generated data
-/src/data/raw/
-map.html
-
-# Experimental
-src/features/geocoding_sqlite3.py
-src/tests/database_explore.py
