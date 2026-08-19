@@ -152,10 +152,20 @@ services:
     ports:
       - "127.0.0.1:9090:9090" # Expose Prometheus on localhost only
     volumes:
-      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro # ro == read only
+      # Prometheus configuration
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      # Persist Prometheus data
       - prometheus_data:/prometheus
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
+    restart: unless-stopped
+
+  pushgateway:
+    image: prom/pushgateway
+    environment:
+      PUSHGATEWAY_URL: http://pushgateway:9091
+    ports:
+      - "127.0.0.1:9091:9091"
     restart: unless-stopped
 
 volumes:
@@ -365,6 +375,10 @@ scrape_configs:
     static_configs:
       - targets:
           - "backend:8000"
+  - job_name: "job-market-etl"
+    static_configs:
+      - targets:
+          - "pushgateway:9091"
 
 #alerting:
 #  alertmanagers:
@@ -690,6 +704,7 @@ from src.data.database import (
     DatabaseUnavailableError,
     get_database_connection,
 )
+from src.monitoring.metrics import monitor_job_search
 
 # region Setup
 
@@ -860,6 +875,7 @@ class JobDetailModel(JobModel):
         }
     },
 )
+@monitor_job_search # order is important
 def get_jobs(
     keyword: str | None = Query(
         default=None,
@@ -1418,6 +1434,11 @@ JOB_DETAIL_FAILURES_FILE_NAME = "job-detail-failures.json"
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
     "postgresql+psycopg://job_market:job_market@localhost:5432/job_market",
+)
+
+PUSHGATEWAY_URL = os.getenv(
+    "PUSHGATEWAY_URL",
+    "http://127.0.0.1:9091",
 )
 
 DASH_DEBUG = os.getenv("DASH_DEBUG", "true").lower() == "true"
@@ -2933,7 +2954,7 @@ class ArbeitsagenturClient:
 
         return data
 
-    @monitor_arbeitsagentur_request("search_jobs")
+    @monitor_arbeitsagentur_request("get_job_details")
     def get_job_details(self, reference_number: str) -> dict[str, Any]:
         """Retrieve the full details for one job advertisement."""
 
@@ -2999,11 +3020,13 @@ def get_database_connection() -> Generator[SQLAlchemyConnection, None, None]:
 ./src/data/etl/etl.py
 ---------------------------------------------------------
 import argparse
+import time
 
 from src.config.settings import DEFAULT_JOB_SEARCH_KEYWORDS
 from src.data.etl.extract_data import extract_data
 from src.data.etl.transform_data import transform_data
 from src.data.etl.load_data import load_data
+from src.monitoring.metrics import push_etl_metrics, record_etl_runtime
 
 
 def _parse_arguments() -> argparse.Namespace:
@@ -3025,18 +3048,23 @@ def main() -> None:
     arguments = _parse_arguments()
 
     keywords = (
-        tuple(arguments.keywords)
-        if arguments.keywords
-        else DEFAULT_JOB_SEARCH_KEYWORDS
+        tuple(arguments.keywords) if arguments.keywords else DEFAULT_JOB_SEARCH_KEYWORDS
     )
+
+    start_time = time.perf_counter()
 
     raw_path = extract_data(keywords)
     clean_path = transform_data(raw_path)
     load_data(clean_path)
 
+    runtime = time.perf_counter() - start_time
+    record_etl_runtime(runtime)
+    push_etl_metrics("pushgateway:9091")
+
 
 if __name__ == "__main__":
     main()
+
 
 
 
@@ -3929,6 +3957,7 @@ from functools import wraps
 from contextlib import contextmanager
 
 from prometheus_client import (
+    CollectorRegistry,
     CONTENT_TYPE_LATEST,
     Counter,
     Gauge,
@@ -3936,6 +3965,7 @@ from prometheus_client import (
     Info,
     Summary,
     generate_latest,
+    push_to_gateway,
 )
 
 # region Setup
@@ -3965,6 +3995,31 @@ _arbeitsagentur_api_up = Gauge(
 _active_database_connections = Gauge(
     "active_database_connections",
     "Number of database connections currently in use by the application",
+)
+
+_job_search_requests_total = Counter(
+    "job_search_requests_total",
+    "Number of job search requests",
+    ["status"],
+)
+
+_job_search_duration_seconds = Histogram(
+    "job_search_duration_seconds",
+    "Duration of job search requests",
+)
+
+_etl_registry = CollectorRegistry()
+
+_etl_runtime_seconds = Gauge(
+    "etl_runtime_seconds",
+    "Duration of the last ETL run in seconds",
+    registry=_etl_registry,
+)
+
+_etl_last_success_unixtime = Gauge(
+    "etl_last_success_unixtime",
+    "Unix timestamp of the last successful ETL run",
+    registry=_etl_registry,
 )
 
 
@@ -4019,6 +4074,42 @@ def monitor_database_connection(function):
         return monitored_connection()
 
     return wrapper
+
+
+def monitor_job_search(function):
+    """Track the duration and outcome of a job search."""
+
+    @wraps(function)
+    def wrapper(*args, **kwargs):
+        try:
+            with _job_search_duration_seconds.time():
+                result = function(*args, **kwargs)
+
+        except Exception:
+            _job_search_requests_total.labels(status="failure").inc()
+            raise
+
+        _job_search_requests_total.labels(status="success").inc()
+
+        return result
+
+    return wrapper
+
+
+def record_etl_runtime(runtime_seconds: float) -> None:
+    """Record the duration of the latest ETL run."""
+
+    _etl_runtime_seconds.set(runtime_seconds)
+
+
+def push_etl_metrics(pushgateway_url: str):
+    """Push ETL metrics to the Prometheus Pushgateway."""
+
+    push_to_gateway(
+        pushgateway_url,
+        job="job-market-etl",
+        registry=_etl_registry,
+    )
 
 
 

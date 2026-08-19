@@ -58,6 +58,7 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql+psycopg://job_market:job_market@postgres:5432/job_market
+      PUSHGATEWAY_URL: http://pushgateway:9091
     volumes:
       - job-market-data:/app/data
     command:
@@ -74,6 +75,7 @@ services:
       DATABASE_URL: postgresql+psycopg://job_market:job_market@postgres:5432/job_market
       AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS: admin:admin
       AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_PASSWORDS_FILE: /opt/airflow/simple_auth_passwords.json
+      PUSHGATEWAY_URL: http://pushgateway:9091
     volumes:
       - job-market-data:/app/data
     ports:
@@ -91,6 +93,12 @@ services:
       - prometheus_data:/prometheus
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
+    restart: unless-stopped
+
+  pushgateway:
+    image: prom/pushgateway
+    ports:
+      - "127.0.0.1:9091:9091"
     restart: unless-stopped
 
 volumes:

@@ -7,6 +7,7 @@ from functools import wraps
 from contextlib import contextmanager
 
 from prometheus_client import (
+    CollectorRegistry,
     CONTENT_TYPE_LATEST,
     Counter,
     Gauge,
@@ -14,7 +15,10 @@ from prometheus_client import (
     Info,
     Summary,
     generate_latest,
+    push_to_gateway,
 )
+
+from src.config.settings import PUSHGATEWAY_URL
 
 # region Setup
 
@@ -54,6 +58,20 @@ _job_search_requests_total = Counter(
 _job_search_duration_seconds = Histogram(
     "job_search_duration_seconds",
     "Duration of job search requests",
+)
+
+_etl_registry = CollectorRegistry()
+
+_etl_runtime_seconds = Gauge(
+    "etl_runtime_seconds",
+    "Duration of the last ETL run in seconds",
+    registry=_etl_registry,
+)
+
+_etl_last_success_unixtime = Gauge(
+    "etl_last_success_unixtime",
+    "Unix timestamp of the last successful ETL run",
+    registry=_etl_registry,
 )
 
 
@@ -124,6 +142,37 @@ def monitor_job_search(function):
             raise
 
         _job_search_requests_total.labels(status="success").inc()
+
+        return result
+
+    return wrapper
+
+
+def _push_etl_metrics(pushgateway_url: str):
+    """Push ETL metrics to the Prometheus Pushgateway."""
+
+    push_to_gateway(
+        pushgateway_url,
+        job="job-market-etl",
+        registry=_etl_registry,
+    )
+
+
+def monitor_etl_run(function):
+    """Track a successful ETL run and push its metrics."""
+
+    @wraps(function)
+    def wrapper(*args, **kwargs):
+        start_time = time.perf_counter()
+
+        result = function(*args, **kwargs)
+
+        runtime_seconds = time.perf_counter() - start_time
+
+        _etl_runtime_seconds.set(runtime_seconds)
+        _etl_last_success_unixtime.set_to_current_time()
+
+        _push_etl_metrics(PUSHGATEWAY_URL)
 
         return result
 

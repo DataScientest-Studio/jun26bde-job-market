@@ -25,6 +25,11 @@ DATABASE_URL = os.getenv(
     "postgresql+psycopg://job_market:job_market@localhost:5432/job_market",
 )
 
+PUSHGATEWAY_URL = os.getenv(
+    "PUSHGATEWAY_URL",
+    "http://127.0.0.1:9091",
+)
+
 DASH_DEBUG = os.getenv("DASH_DEBUG", "true").lower() == "true"
 
 # Arbeitsagentur API / ETL

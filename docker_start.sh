@@ -8,7 +8,7 @@ DASH_URL="http://127.0.0.1:8050"
 AIRFLOW_URL="http://127.0.0.1:8080"
 PROMETHEUS_URL="http://127.0.0.1:9090"
 
-docker compose up --build -d postgres backend frontend airflow prometheus
+docker compose up --build -d postgres backend frontend airflow prometheus pushgateway
 
 wait_for_url() {
     url="$1"
