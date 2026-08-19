@@ -12,6 +12,7 @@ Swagger UI is available at:
 """
 
 from fastapi import FastAPI
+from prometheus_client import make_asgi_app
 
 from src.api.routes.jobs import router as jobs_router
 from src.api.routes.health import router as health_router
@@ -25,3 +26,6 @@ api = FastAPI(
 api.include_router(health_router)
 api.include_router(jobs_router)
 api.include_router(statistics_router)
+
+metrics_app = make_asgi_app()
+api.mount("/metrics", metrics_app)

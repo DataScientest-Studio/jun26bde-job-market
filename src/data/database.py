@@ -7,6 +7,7 @@ from sqlalchemy.engine import Connection as SQLAlchemyConnection
 from sqlalchemy.exc import SQLAlchemyError
 
 from src.config.settings import DATABASE_URL
+from src.monitoring.metrics import monitor_database_connection
 
 
 class DatabaseUnavailableError(Exception):
@@ -16,6 +17,7 @@ class DatabaseUnavailableError(Exception):
 engine = create_engine(DATABASE_URL)
 
 
+@monitor_database_connection
 @contextmanager
 def get_database_connection() -> Generator[SQLAlchemyConnection, None, None]:
     """Provide a configured connection to the job database."""

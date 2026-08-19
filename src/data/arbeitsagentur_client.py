@@ -5,6 +5,8 @@ from typing import Any
 
 import requests
 
+from src.monitoring.metrics import monitor_arbeitsagentur_request
+
 
 class ArbeitsagenturClient:
     """Small client for searching Arbeitsagentur job advertisements."""
@@ -32,6 +34,7 @@ class ArbeitsagenturClient:
             }
         )
 
+    @monitor_arbeitsagentur_request("search_jobs")
     def search_jobs(
         self,
         keyword: str,
@@ -71,6 +74,7 @@ class ArbeitsagenturClient:
 
         return data
 
+    @monitor_arbeitsagentur_request("get_job_details")
     def get_job_details(self, reference_number: str) -> dict[str, Any]:
         """Retrieve the full details for one job advertisement."""
 

@@ -6,8 +6,9 @@ SWAGGER_URL="http://127.0.0.1:8000/docs"
 HEALTH_URL="http://127.0.0.1:8000/health"
 DASH_URL="http://127.0.0.1:8050"
 AIRFLOW_URL="http://127.0.0.1:8080"
+PROMETHEUS_URL="http://127.0.0.1:9090"
 
-docker compose up --build -d postgres backend frontend airflow
+docker compose up --build -d postgres backend frontend airflow prometheus
 
 wait_for_url() {
     url="$1"
@@ -48,6 +49,9 @@ wait_for_url "$DASH_URL" frontend
 echo "Waiting for Airflow..."
 wait_for_url "$AIRFLOW_URL" airflow
 
+echo "Waiting for Prometheus..."
+wait_for_url "$PROMETHEUS_URL" prometheus
+
 AIRFLOW_PASSWORD_LINE=$(
     docker compose logs airflow 2>/dev/null \
         | grep "Password for user" \
@@ -60,7 +64,7 @@ import webbrowser
 
 for url in sys.argv[1:]:
     webbrowser.open(url)
-' "$SWAGGER_URL" "$DASH_URL" "$AIRFLOW_URL"
+' "$SWAGGER_URL" "$DASH_URL" "$AIRFLOW_URL" "$PROMETHEUS_URL"
 
 echo
 echo "======================================"
@@ -69,6 +73,7 @@ echo "======================================"
 echo "Swagger: $SWAGGER_URL"
 echo "Dash:    $DASH_URL"
 echo "Airflow: $AIRFLOW_URL"
+echo "Prometheus: $PROMETHEUS_URL"
 echo
 
 if [ -n "$AIRFLOW_PASSWORD_LINE" ]; then
