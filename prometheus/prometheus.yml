@@ -2,8 +2,8 @@ global:
   scrape_interval: 15s
   evaluation_interval: 1m  # default
 
-#rule_files:
-#  - /etc/prometheus/alerts.yml  # path inside the Prometheus (Docker) container
+rule_files:
+  - /etc/prometheus/alerts.yml  # path inside the Prometheus (Docker) container
 
 scrape_configs:
   - job_name: "prometheus"
@@ -19,8 +19,8 @@ scrape_configs:
       - targets:
           - "pushgateway:9091"
 
-#alerting:
-#  alertmanagers:
-#    - static_configs:
-#        - targets:
-#            - "alertmanager:9093"  # Docker service name and Alertmanager's internal listening port
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - "alertmanager:9093"  # Docker service name and Alertmanager's internal listening port

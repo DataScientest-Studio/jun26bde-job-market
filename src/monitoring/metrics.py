@@ -1,20 +1,16 @@
-import os
 import logging
 import requests
-import threading
 import time
+
 from functools import wraps
 from contextlib import contextmanager
+from urllib.error import URLError
 
 from prometheus_client import (
     CollectorRegistry,
-    CONTENT_TYPE_LATEST,
     Counter,
     Gauge,
     Histogram,
-    Info,
-    Summary,
-    generate_latest,
     push_to_gateway,
 )
 
@@ -169,13 +165,14 @@ def monitor_etl_run(function):
 
         _etl_runtime_seconds.set(runtime_seconds)
         _etl_last_success_unixtime.set_to_current_time()
-
-        push_to_gateway(
-            PUSHGATEWAY_URL,
-            job="job-market-etl",
-            registry=_etl_registry,
-        )
-
+        try:
+            push_to_gateway(
+                PUSHGATEWAY_URL,
+                job="job-market-etl",
+                registry=_etl_registry,
+            )
+        except URLError:
+            logger.exception("Could not push ETL metrics to Pushgateway")
         return result
 
     return wrapper

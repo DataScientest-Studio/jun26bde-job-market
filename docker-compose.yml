@@ -56,6 +56,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      pushgateway:
+        condition: service_started
     environment:
       DATABASE_URL: postgresql+psycopg://job_market:job_market@postgres:5432/job_market
       PUSHGATEWAY_URL: http://pushgateway:9091
@@ -71,6 +73,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      pushgateway:
+        condition: service_started
     environment:
       DATABASE_URL: postgresql+psycopg://job_market:job_market@postgres:5432/job_market
       AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS: admin:admin
@@ -89,6 +93,7 @@ services:
     volumes:
       # Prometheus configuration
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
       # Persist Prometheus data
       - prometheus_data:/prometheus
     command:
@@ -99,6 +104,16 @@ services:
     image: prom/pushgateway
     ports:
       - "127.0.0.1:9091:9091"
+    restart: unless-stopped
+
+  alertmanager:
+    image: prom/alertmanager
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./prometheus/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
     restart: unless-stopped
 
 volumes:
