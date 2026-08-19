@@ -4,6 +4,8 @@ from typing import Any
 from geopy.extra.rate_limiter import RateLimiter
 from geopy.geocoders import Nominatim
 
+from src.monitoring.metrics import record_failed_geocoding
+
 GEOPY_USER_AGENT = "job-market-mapper"
 GEOPY_DELAY_SECONDS = 1.0
 GEOPY_MAX_RETRIES = 2
@@ -64,6 +66,7 @@ class JobLocationGeocoder:
         if location is not None:
             result = (location.latitude, location.longitude)
         else:
+            record_failed_geocoding()
             logger.warning("Geocoding returned no result for %r", query)
             result = (None, None)
         self._cache[query] = result

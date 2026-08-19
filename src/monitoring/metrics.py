@@ -74,6 +74,13 @@ _etl_last_success_unixtime = Gauge(
     registry=_etl_registry,
 )
 
+# Using Gauge representing the latest run rather than a cumulative Counter that would reset with every ETL process
+_failed_geocoding_requests = Gauge(
+    "failed_geocoding_requests",
+    "Number of failed geocoding requests in the latest ETL run",
+    registry=_etl_registry,
+)
+
 
 def monitor_arbeitsagentur_request(operation: str):
     """Track the duration and outcome of an Arbeitsagentur API operation."""
@@ -148,21 +155,12 @@ def monitor_job_search(function):
     return wrapper
 
 
-def _push_etl_metrics(pushgateway_url: str):
-    """Push ETL metrics to the Prometheus Pushgateway."""
-
-    push_to_gateway(
-        pushgateway_url,
-        job="job-market-etl",
-        registry=_etl_registry,
-    )
-
-
 def monitor_etl_run(function):
     """Track a successful ETL run and push its metrics."""
 
     @wraps(function)
     def wrapper(*args, **kwargs):
+        _failed_geocoding_requests.set(0)
         start_time = time.perf_counter()
 
         result = function(*args, **kwargs)
@@ -172,8 +170,16 @@ def monitor_etl_run(function):
         _etl_runtime_seconds.set(runtime_seconds)
         _etl_last_success_unixtime.set_to_current_time()
 
-        _push_etl_metrics(PUSHGATEWAY_URL)
+        push_to_gateway(
+            PUSHGATEWAY_URL,
+            job="job-market-etl",
+            registry=_etl_registry,
+        )
 
         return result
 
     return wrapper
+
+
+def record_failed_geocoding():
+    _failed_geocoding_requests.inc()
