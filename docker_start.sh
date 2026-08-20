@@ -8,8 +8,9 @@ DASH_URL="http://127.0.0.1:8050"
 AIRFLOW_URL="http://127.0.0.1:8080"
 PROMETHEUS_URL="http://127.0.0.1:9090"
 ALERTMANAGER_URL="http://127.0.0.1:9093"
+GRAFANA_URL="http://127.0.0.1:3000"
 
-docker compose up --build -d postgres backend frontend airflow prometheus pushgateway alertmanager
+docker compose up --build -d postgres backend frontend airflow prometheus pushgateway alertmanager grafana
 
 wait_for_url() {
     url="$1"
@@ -56,6 +57,9 @@ wait_for_url "$PROMETHEUS_URL" prometheus
 echo "Waiting for Alertmanager..."
 wait_for_url "$ALERTMANAGER_URL" alertmanager
 
+echo "Waiting for Grafana..."
+wait_for_url "$GRAFANA_URL" grafana
+
 AIRFLOW_PASSWORD_LINE=$(
     docker compose logs airflow 2>/dev/null \
         | grep "Password for user" \
@@ -79,6 +83,7 @@ echo "Dash:    $DASH_URL"
 echo "Airflow: $AIRFLOW_URL"
 echo "Prometheus: $PROMETHEUS_URL"
 echo "Alert Manager: $ALERTMANAGER_URL"
+echo "Grafana: $GRAFANA_URL"
 echo
 
 if [ -n "$AIRFLOW_PASSWORD_LINE" ]; then
