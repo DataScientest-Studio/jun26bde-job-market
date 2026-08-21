@@ -170,10 +170,11 @@ Start the application:
 
 **Airflow:** http://127.0.0.1:8080
 
-### Use AlertManager in Prometheus
- 
- In order to use alerts in Prometheus you need to have the file secrets/slack_webhook_url with Slack URL in the root directory.
- Then start 
+**Prometheus:** http://127.0.0.1:9090
+
+**Prometheus-Alertmanager:** http://127.0.0.1:9093
+
+**Grafana:** http://127.0.0.1:3000
 
 ##
 
