@@ -16,6 +16,7 @@ from src.data.database import (
     DatabaseUnavailableError,
     get_database_connection,
 )
+from src.monitoring.metrics import monitor_job_search
 
 # region Setup
 
@@ -186,6 +187,7 @@ class JobDetailModel(JobModel):
         }
     },
 )
+@monitor_job_search # order is important
 def get_jobs(
     keyword: str | None = Query(
         default=None,

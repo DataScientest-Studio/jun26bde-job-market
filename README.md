@@ -103,6 +103,10 @@ data
 
 ![Docker Deployment](docs/images/docker-deployment.png)
 
+### Monitoring
+
+![Monitoring](docs/images/monitoring.png)
+
 ## Usage
 
 > **Note:** Every command in this section is assumed to be run from the project root directory.
@@ -169,6 +173,12 @@ Start the application:
 **Dash (Frontend):** http://127.0.0.1:8050
 
 **Airflow:** http://127.0.0.1:8080
+
+**Prometheus:** http://127.0.0.1:9090
+
+**Prometheus-Alertmanager:** http://127.0.0.1:9093
+
+**Grafana:** http://127.0.0.1:3000
 
 ##
 
