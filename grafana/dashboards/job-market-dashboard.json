@@ -583,7 +583,7 @@
         "kind": "Panel",
         "spec": {
           "id": 6,
-          "title": "# Geocoding Failures",
+          "title": "Geocoding Failures",
           "description": "",
           "links": [],
           "data": {

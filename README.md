@@ -103,6 +103,10 @@ data
 
 ![Docker Deployment](docs/images/docker-deployment.png)
 
+### Monitoring
+
+![Monitoring](docs/images/monitoring.png)
+
 ## Usage
 
 > **Note:** Every command in this section is assumed to be run from the project root directory.
