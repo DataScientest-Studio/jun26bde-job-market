@@ -1,5 +1,9 @@
 # Project 'Job-Market'
 
+![Find Jobs UI](docs/images/find-jobs-ui.png)
+
+![Statistics UI](docs/images/statistics-ui.png)
+
 ## Architecture
 
 ### Project Folder Structure
@@ -21,15 +25,24 @@ src
 |       |       endpoints for searching jobs and retrieving individual job details
 |       |
 |       |   statistics.py
-|       |       statistical endpoints for jobs, companies, locations, and home-office availability
+|       |       statistical endpoints for jobs, companies, locations, and home-office availability, and categories
 |
 +---config
 |   |   settings.py
 |   |       shared configuration such as paths, ports, and API URLs
 |
 +---dashboard
-|   |   app.py
-|   |       Dash frontend entry point
+|   |   callbacks.py
+|   |       handles dashboard interactions and API requests
+|   |
+|   |   jobs.py
+|   |       creates job cards, job details, and the category-colored map
+|   |
+|   |   layouts.py
+|   |       defines the Dash page layout
+|   |
+|   |   statistics.py
+|   |       creates job-market statistics charts
 |   |
 |   +---assets
 |       |   styles.css
@@ -42,6 +55,9 @@ src
 |   |   database.py
 |   |       provides shared PostgreSQL database access
 |   |
+|   |   job_category_classifier.py
+|   |       assigns standardized categories to jobs
+|   |
 |   |   job_location_geocoder.py
 |   |       adds missing latitude and longitude coordinates
 |   |
@@ -53,7 +69,7 @@ src
 |       |       downloads and stores raw job data
 |       |
 |       |   transform_data.py
-|       |       converts raw jobs to the internal schema and geocodes locations
+|       |       converts raw jobs to the internal schema, assigns categories, and geocodes locations
 |       |
 |       |   load_data.py
 |               creates/updates PostgreSQL records
@@ -111,6 +127,16 @@ data
 
 > **Note:** Every command in this section is assumed to be run from the project root directory.
 
+### Populate or update the job database
+
+Run:
+
+```sh
+./docker_update_data.sh --keyword "Data Engineer" --keyword "Data Analyst" --keyword "AI Engineer"
+```
+
+You can replace these search terms or add more --keyword arguments. If no `--keyword` arguments are provided, the default search terms configured in `src/config/settings.py` are used.
+
 ### Local Development
 
 #### Setup Python
@@ -123,12 +149,6 @@ pip install -r requirements.txt
 ```
 
 > **Note:** If on Windows, run `.venv\Scripts\Activate.ps1` instead of `source .venv\bin\activate`.
-
-#### Create or update the database with recent jobs
-
-```sh
-./docker_update_data.sh
-```
 
 #### Start PostgreSQL
 
@@ -158,14 +178,6 @@ Start the application:
 ./docker_start.sh
 ```
 
-(This starts PostgreSQL, the FastAPI backend, Airflow, and the Dash frontend.)
-
-#### Create or update the database with recent jobs
-
-```sh
-./docker_update_data.sh --keyword "Data Engineer" --keyword "AI Engineer"
-```
-
 ### Open in your browser
 
 **Swagger (Backend):** http://127.0.0.1:8000/docs
@@ -180,6 +192,6 @@ Start the application:
 
 **Grafana:** http://127.0.0.1:3000
 
-##
+---
 
 > Project is based on the [Cookiecutter Data Science project template](https://drivendata.github.io/cookiecutter-data-science/). #cookiecutterdatascience
