@@ -109,6 +109,16 @@ SELECT
 FROM jobs
 """)
 
+# Count jobs in each standardized category.
+GET_CATEGORY_STATISTICS_SQL = text("""
+SELECT
+    category,
+    COUNT(*) AS job_count
+FROM jobs
+GROUP BY category
+ORDER BY job_count DESC, category ASC
+""")
+
 # endregion
 
 
@@ -147,6 +157,13 @@ class HomeOfficeStatisticsModel(BaseModel):
     possible: int
     not_possible: int
     unknown: int
+
+
+class CategoryStatisticsModel(BaseModel):
+    """The number of job advertisements in a standardized category."""
+
+    category: str
+    job_count: int
 
 
 # endregion
@@ -335,6 +352,40 @@ def get_home_office_statistics() -> HomeOfficeStatisticsModel:
         )
 
     return HomeOfficeStatisticsModel(**row._mapping)
+
+
+@router.get(
+    "/categories",
+    summary="Get category statistics",
+    response_description=(
+        "Standardized job categories and their numbers of job advertisements"
+    ),
+    response_model=list[CategoryStatisticsModel],
+    responses={
+        503: {
+            "description": "The job database is unavailable",
+        }
+    },
+)
+def get_category_statistics() -> list[CategoryStatisticsModel]:
+    """
+    Return standardized categories and their job counts.
+
+    Categories are ordered by job count, highest first.
+    """
+    try:
+        with get_database_connection() as connection:
+            rows = connection.execute(GET_CATEGORY_STATISTICS_SQL).fetchall()
+
+    except DatabaseUnavailableError:
+        logger.exception("Could not read category statistics from the job database")
+
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="The job database is unavailable.",
+        )
+
+    return [CategoryStatisticsModel(**row._mapping) for row in rows]
 
 
 # endregion

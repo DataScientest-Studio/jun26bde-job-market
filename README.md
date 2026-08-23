@@ -124,18 +124,18 @@ pip install -r requirements.txt
 
 > **Note:** If on Windows, run `.venv\Scripts\Activate.ps1` instead of `source .venv\bin\activate`.
 
+#### Create or update the database with recent jobs
+
+```sh
+./docker_update_data.sh
+```
+
 #### Start PostgreSQL
 
 > **Note:** Make sure no other containers from this project (aside from PostgreSQL) are running. If necessary, stop the full Docker deployment with `docker compose down` before running the next command.
 
 ```sh
 docker compose up -d postgres
-```
-
-#### Create or update the database with recent jobs
-
-```sh
-python -m src.data.etl.etl --keyword "Data Engineer" --keyword "AI Engineer"
 ```
 
 #### Start the backend API

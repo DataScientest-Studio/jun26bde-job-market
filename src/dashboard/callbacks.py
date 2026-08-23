@@ -4,7 +4,7 @@ import requests
 
 from dash import ALL, Dash, Input, Output, State, ctx, html, no_update
 
-from src.config.settings import FASTAPI_URL, JOBS_PAGE_SIZE
+from src.config.settings import FASTAPI_URL, JOB_ANY_CATEGORY_DROPDOWN_VALUE, JOBS_PAGE_SIZE
 from src.dashboard.jobs import (
     create_job_card,
     create_job_details_modal_content,
@@ -61,6 +61,7 @@ def register_callbacks(app: Dash):
         State("keyword-input", "value"),
         State("location-input", "value"),
         State("company-input", "value"),
+        State("category-input", "value"),
     )
     def search_jobs(
         search_clicks: int | None,
@@ -70,6 +71,7 @@ def register_callbacks(app: Dash):
         keyword: str | None,
         city: str | None,
         company: str | None,
+        category: str,
     ):
         """Retrieve jobs from FastAPI and update the results."""
 
@@ -95,6 +97,9 @@ def register_callbacks(app: Dash):
 
         if company:
             parameters["company"] = company.strip()
+
+        if category != JOB_ANY_CATEGORY_DROPDOWN_VALUE:
+            parameters["category"] = category
 
         try:
             response = requests.get(

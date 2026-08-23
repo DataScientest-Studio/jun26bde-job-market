@@ -38,7 +38,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     external_url TEXT,
     partner_name TEXT,
     partner_url TEXT,
-    employer_customer_hash TEXT
+    employer_customer_hash TEXT,
+    category TEXT NOT NULL DEFAULT 'Other'
 );
 """)
 
@@ -89,7 +90,8 @@ INSERT INTO jobs (
     external_url,
     partner_name,
     partner_url,
-    employer_customer_hash
+    employer_customer_hash,
+    category
 )
 VALUES (
     :reference_number,
@@ -115,7 +117,8 @@ VALUES (
     :external_url,
     :partner_name,
     :partner_url,
-    :employer_customer_hash
+    :employer_customer_hash,
+    :category
 )
 ON CONFLICT(reference_number) DO UPDATE SET
     title = excluded.title,
@@ -140,7 +143,8 @@ ON CONFLICT(reference_number) DO UPDATE SET
     external_url = excluded.external_url,
     partner_name = excluded.partner_name,
     partner_url = excluded.partner_url,
-    employer_customer_hash = excluded.employer_customer_hash;
+    employer_customer_hash = excluded.employer_customer_hash,
+    category = excluded.category;
 """)
 
 

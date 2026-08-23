@@ -6,12 +6,12 @@ import pandas as pd
 import plotly.express as px
 from dash import dcc, html
 
-from src.config.settings import FASTAPI_URL
+from src.config.settings import CATEGORY_COLORS, FASTAPI_URL
 
 # region Private helper functions
 
 
-def _get_statistics() -> tuple[dict, list, list, dict]:
+def _get_statistics() -> tuple[dict, list, list, dict, list]:
     overview = requests.get(
         f"{FASTAPI_URL}/statistics/overview",
         timeout=10,
@@ -38,11 +38,18 @@ def _get_statistics() -> tuple[dict, list, list, dict]:
     )
     home_office.raise_for_status()
 
+    categories = requests.get(
+        f"{FASTAPI_URL}/statistics/categories",
+        timeout=10,
+    )
+    categories.raise_for_status()
+
     return (
         overview.json(),
         companies.json(),
         locations.json(),
         home_office.json(),
+        categories.json(),
     )
 
 
@@ -50,7 +57,7 @@ def _get_statistics() -> tuple[dict, list, list, dict]:
 
 
 def create_statistics_content() -> tuple[html.Div, list[dcc.Graph]]:
-    overview, companies, locations, home_office = _get_statistics()
+    overview, companies, locations, home_office, categories = _get_statistics()
 
     overview_cards = html.Div(
         [
@@ -89,27 +96,25 @@ def create_statistics_content() -> tuple[html.Div, list[dcc.Graph]]:
         className="statistics-overview",
     )
 
-    companies_frame = pd.DataFrame(companies)
-
+    companies_df = pd.DataFrame(companies)
     companies_figure = px.bar(
-        companies_frame,
+        companies_df,
         x="job_count",
         y="company",
         orientation="h",
         title="Top companies",
     )
 
-    locations_frame = pd.DataFrame(locations)
-
+    locations_df = pd.DataFrame(locations)
     locations_figure = px.bar(
-        locations_frame,
+        locations_df,
         x="job_count",
         y="city",
         orientation="h",
         title="Top locations",
     )
 
-    home_office_frame = pd.DataFrame(
+    home_office_df = pd.DataFrame(
         {
             "status": ["Possible", "Not possible", "Unknown"],
             "count": [
@@ -119,17 +124,33 @@ def create_statistics_content() -> tuple[html.Div, list[dcc.Graph]]:
             ],
         }
     )
-
     home_office_figure = px.pie(
-        home_office_frame,
+        home_office_df,
         names="status",
         values="count",
         hole=0.5,
         title="Home office",
     )
 
+    categories_df = pd.DataFrame(categories).sort_values("job_count")
+    categories_figure = px.bar(
+        categories_df,
+        x="job_count",
+        y="category",
+        color="category",
+        color_discrete_map=CATEGORY_COLORS,
+        orientation="h",
+        title="Jobs by category",
+    )
+    categories_figure.update_layout(
+        showlegend=False,
+        xaxis_title="Jobs",
+        yaxis_title=None,
+    )
+
     return overview_cards, [
         dcc.Graph(figure=companies_figure),
         dcc.Graph(figure=locations_figure),
         dcc.Graph(figure=home_office_figure),
+        dcc.Graph(figure=categories_figure),
     ]
