@@ -8,6 +8,7 @@ from typing import Any
 from src.config.settings import CLEAN_JSON_FILE_NAME, PROCESSED_DATA_DIRECTORY
 from src.data.job_location_geocoder import JobLocationGeocoder
 from src.data.utils.json_utils import load_json, save_json
+from src.data.job_category_classifier import classify_job
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +97,10 @@ def _clean_job(raw_job: dict[str, Any]) -> dict[str, Any]:
         "partner_url": raw_job.get("allianzpartnerUrl"),
         "employer_customer_hash": raw_job.get("arbeitgeberKundennummerHash"),
         "locations": clean_locations,
+        "category": classify_job(
+            title=raw_job.get("stellenangebotsTitel"),
+            occupation=raw_job.get("hauptberuf"),
+        ),
     }
 
 

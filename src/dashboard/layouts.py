@@ -1,5 +1,10 @@
 from dash import dcc, html
 
+from src.config.settings import (
+    JOB_ANY_CATEGORY_DROPDOWN_LABEL,
+    JOB_ANY_CATEGORY_DROPDOWN_VALUE,
+    JOB_CATEGORIES,
+)
 from src.dashboard.jobs import create_map
 
 # region Private helper functions
@@ -82,6 +87,28 @@ def _create_find_jobs_page() -> html.Div:
                                         id="company-input",
                                         type="text",
                                         placeholder="Any company",
+                                    ),
+                                ],
+                                className="search-field",
+                            ),
+                            html.Div(
+                                [
+                                    html.Label("Category"),
+                                    dcc.Dropdown(
+                                        id="category-input",
+                                        options=[
+                                            {
+                                                "label": JOB_ANY_CATEGORY_DROPDOWN_LABEL,
+                                                "value": JOB_ANY_CATEGORY_DROPDOWN_VALUE,
+                                            },
+                                            *[
+                                                {"label": category, "value": category}
+                                                for category in JOB_CATEGORIES
+                                            ],
+                                        ],
+                                        value=JOB_ANY_CATEGORY_DROPDOWN_VALUE,
+                                        clearable=False,
+                                        searchable=False,
                                     ),
                                 ],
                                 className="search-field",

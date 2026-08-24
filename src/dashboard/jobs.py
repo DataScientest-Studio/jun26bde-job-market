@@ -5,6 +5,8 @@ import plotly.express as px
 from plotly.graph_objects import Figure
 from dash import html
 
+from src.config.settings import CATEGORY_COLORS, JOB_CATEGORIES
+
 # region Private helper functions
 
 
@@ -76,7 +78,7 @@ def create_job_card(job: dict) -> html.Article:
 
 
 def create_job_details_modal_content(job: dict) -> list:
-    """ Create content for the Job Details modal. """
+    """Create content for the Job Details modal."""
     salary = _format_salary(job)
 
     locations = [
@@ -156,10 +158,19 @@ def create_map(jobs: list[dict]) -> Figure:
 
     jobs_frame = pd.DataFrame(jobs_with_coordinates)
 
+    jobs_frame["category"] = jobs_frame["category"].fillna("Other")
+    jobs_frame.loc[
+        ~jobs_frame["category"].isin(JOB_CATEGORIES),
+        "category",
+    ] = "Other"
+
     figure = px.scatter_map(
         jobs_frame,
         lat="latitude",
         lon="longitude",
+        color="category",
+        color_discrete_map=CATEGORY_COLORS,
+        category_orders={"category": JOB_CATEGORIES},
         hover_name="title",
         hover_data={
             "company": True,
@@ -171,6 +182,7 @@ def create_map(jobs: list[dict]) -> Figure:
             "reference_number",
             "company",
             "city",
+            "category",
         ],
         zoom=4,
         center={"lat": 51.1, "lon": 10.4},
@@ -178,19 +190,32 @@ def create_map(jobs: list[dict]) -> Figure:
     )
 
     figure.update_traces(
-        marker={
-            "size": 18,
-            "color": "#ff385c",
-        },
+        marker={"size": 18},
         hovertemplate=(
             "<b>%{hovertext}</b><br>"
             "Company: %{customdata[1]}<br>"
-            "City: %{customdata[2]}"
+            "City: %{customdata[2]}<br>"
+            "Category: %{customdata[3]}"
             "<extra></extra>"
         ),
     )
 
     figure.update_layout(
+        legend={
+            "title": {
+                "text": "<b>Categories</b>",
+                "font": {"size": 13},
+            },
+            "x": 0.99,
+            "y": 0.99,
+            "xanchor": "right",
+            "yanchor": "top",
+            "font": {"size": 11},
+            "bgcolor": "rgba(255, 255, 255, 0.85)",
+            "bordercolor": "rgba(0, 0, 0, 0.12)",
+            "borderwidth": 1,
+            "itemsizing": "constant",
+        },
         margin={"l": 0, "r": 0, "t": 0, "b": 0},
     )
 

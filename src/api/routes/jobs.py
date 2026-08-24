@@ -42,6 +42,7 @@ SELECT
     jobs.salary_min,
     jobs.salary_max,
     jobs.salary_period,
+    jobs.category,
     (
         SELECT city
         FROM job_locations
@@ -73,6 +74,7 @@ SELECT
     title,
     occupation,
     company,
+    category,
     description,
     offer_type,
     full_time,
@@ -130,6 +132,7 @@ class JobModel(BaseModel):
     salary_period: str | None = None
     latitude: float | None = None
     longitude: float | None = None
+    category: str
 
 
 class JobLocationModel(BaseModel):
@@ -166,7 +169,7 @@ class JobDetailModel(JobModel):
     partner_name: str | None = None
     partner_url: str | None = None
     employer_customer_hash: str | None = None
-    # ensures that the default value is a new empty list for EACH instance:
+    # "Field(default_factory=list)" ensures that the default value is a new empty list for EACH instance
     locations: list[JobLocationModel] = Field(default_factory=list)
 
 
@@ -187,7 +190,7 @@ class JobDetailModel(JobModel):
         }
     },
 )
-@monitor_job_search # order is important
+@monitor_job_search  # order is important
 def get_jobs(
     keyword: str | None = Query(
         default=None,
@@ -242,6 +245,11 @@ def get_jobs(
         description="Filter by home-office availability",
         examples=[None, True, False],
     ),
+    category: str | None = Query(
+        default=None,
+        description="Standardized job category",
+        examples=["Data Engineering"],
+    ),
 ) -> list[JobModel]:
     """
     Return jobs ordered by publication date, newest first.
@@ -285,6 +293,10 @@ def get_jobs(
     if home_office is not None:
         query_conditions.append("home_office_possible = :home_office")
         query_parameters["home_office"] = home_office
+
+    if category is not None:
+        query_conditions.append("LOWER(category) = LOWER(:category)")
+        query_parameters["category"] = category
 
     query = GET_ALL_JOBS_SQL
 

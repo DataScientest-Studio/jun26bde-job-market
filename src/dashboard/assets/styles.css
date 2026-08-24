@@ -160,10 +160,11 @@ a {
 /* Container holding the search fields and Search button. */
 .search-panel {
   display: grid;
-  grid-template-columns: 1.3fr 1fr 1fr auto; /* keyword | location |company | search button */
+  /* Represents this 1-row grid: | keyword (what) | location | company | category | search button |. */
+  grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
 
   align-items: center;
-  max-width: 1050px; /* Prevent the search bar becoming too wide. */
+  max-width: 1250px; /* Prevent the search bar becoming too wide. */
   margin: 0 auto; /* Horizontally center the panel. */
   padding: 9px;
 
