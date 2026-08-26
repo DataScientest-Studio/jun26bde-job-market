@@ -1,6 +1,7 @@
 """E/ETL: Extract raw job data from the Arbeitsagentur job-search API."""
 
 import logging
+import math
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -13,7 +14,6 @@ from src.config.settings import (
     JOB_DETAILS_FILE_NAME,
     API_REQUEST_PAGE_SIZE,
     DEFAULT_JOB_SEARCH_KEYWORDS,
-    NUM_API_REQUESTS_PER_SEARCH,
     RAW_DATA_DIRECTORY,
 )
 from src.data.arbeitsagentur_client import ArbeitsagenturClient
@@ -27,7 +27,6 @@ def _search_jobs(
     *,
     keywords: tuple[str, ...],
     first_page: int,
-    number_of_pages: int,
     jobs_per_page: int,
     output_directory: Path,
 ) -> list[dict[str, Any]]:
@@ -39,30 +38,64 @@ def _search_jobs(
             output_directory / "search-results" / keyword.lower().replace(" ", "-")
         )
 
-        for page_number in range(
-            first_page,
-            first_page + number_of_pages,
-        ):
-            logger.info(
-                "Searching for %r, page %d, jobs per page %d",
-                keyword,
-                page_number,
-                jobs_per_page,
+        try:
+            first_result = client.search_jobs(
+                keyword=keyword,
+                page_number=first_page,
+                jobs_per_page=jobs_per_page,
             )
+        except requests.RequestException:
+            logger.exception(
+                "Failed to retrieve first page for %r",
+                keyword,
+            )
+            continue
 
-            try:
-                search_result = client.search_jobs(
-                    keyword=keyword,
-                    page_number=page_number,
-                    jobs_per_page=jobs_per_page,
-                )
-            except requests.RequestException:
-                logger.exception(
-                    "Failed to retrieve page %d for %r",
-                    page_number,
-                    keyword,
-                )
-                continue
+        max_results = first_result.get("maxErgebnisse", 0)
+        page_size = first_result.get("size", jobs_per_page)
+
+        if not isinstance(max_results, int) or not isinstance(page_size, int):
+            logger.warning(
+                "Invalid pagination information for %r",
+                keyword,
+            )
+            continue
+
+        if page_size <= 0:
+            logger.warning(
+                "Invalid page size for %r: %r",
+                keyword,
+                page_size,
+            )
+            continue
+
+        total_pages = math.ceil(max_results / page_size)
+
+        logger.info(
+            "%r: %d results across %d pages (page size %d)",
+            keyword,
+            max_results,
+            total_pages,
+            page_size,
+        )
+
+        for page_number in range(first_page, first_page + total_pages):
+            if page_number == first_page:
+                search_result = first_result
+            else:
+                try:
+                    search_result = client.search_jobs(
+                        keyword=keyword,
+                        page_number=page_number,
+                        jobs_per_page=jobs_per_page,
+                    )
+                except requests.RequestException:
+                    logger.exception(
+                        "Failed to retrieve page %d for %r",
+                        page_number,
+                        keyword,
+                    )
+                    continue
 
             save_json(
                 search_result,
@@ -159,7 +192,6 @@ def extract_data(keywords: tuple[str, ...]) -> Path:
         client,
         keywords=keywords,
         first_page=API_START_PAGE,
-        number_of_pages=NUM_API_REQUESTS_PER_SEARCH,
         jobs_per_page=API_REQUEST_PAGE_SIZE,
         output_directory=output_directory,
     )
