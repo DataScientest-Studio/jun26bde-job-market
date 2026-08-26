@@ -90,11 +90,16 @@ SELECT
     entry_date,
     publication_date,
     first_publication_date,
-    modified_at,
     external_url,
     partner_name,
     partner_url,
-    employer_customer_hash
+    employer_customer_hash,
+    modified_at,
+    first_seen,
+    last_seen,
+    is_active,
+    reappearance_count,
+    modification_count
 FROM jobs
 WHERE reference_number = :reference_number
 """)
@@ -164,11 +169,16 @@ class JobDetailModel(JobModel):
     entry_date: date | None = None
     publication_date: date | None = None
     first_publication_date: date | None = None
-    modified_at: datetime | None = None
     external_url: str | None = None
     partner_name: str | None = None
     partner_url: str | None = None
     employer_customer_hash: str | None = None
+    modified_at: datetime | None = None
+    first_seen: datetime
+    last_seen: datetime
+    is_active: bool
+    reappearance_count: int
+    modification_count: int
     # "Field(default_factory=list)" ensures that the default value is a new empty list for EACH instance
     locations: list[JobLocationModel] = Field(default_factory=list)
 
@@ -263,7 +273,7 @@ def get_jobs(
     - home-office availability.
     """
 
-    query_conditions = []
+    query_conditions = ["jobs.is_active = TRUE"]
     query_parameters: dict[str, object] = {}
 
     if keyword is not None:
@@ -297,6 +307,7 @@ def get_jobs(
     if category is not None:
         query_conditions.append("LOWER(category) = LOWER(:category)")
         query_parameters["category"] = category
+    
 
     query = GET_ALL_JOBS_SQL
 

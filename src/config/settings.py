@@ -44,7 +44,6 @@ DASH_DEBUG = os.getenv("DASH_DEBUG", "true").lower() == "true"
 DEFAULT_JOB_SEARCH_KEYWORDS = ("Data Engineer", "Data Analyst")
 API_START_PAGE = 1
 API_REQUEST_PAGE_SIZE = 50
-NUM_API_REQUESTS_PER_SEARCH = 3
 
 # endregion
 
