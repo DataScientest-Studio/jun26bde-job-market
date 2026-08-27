@@ -40,8 +40,7 @@ DASH_DEBUG = os.getenv("DASH_DEBUG", "true").lower() == "true"
 
 
 # region Arbeitsagentur API / ETL
-
-DEFAULT_JOB_SEARCH_KEYWORDS = ("Data Engineer", "Data Analyst")
+DEFAULT_JOB_SEARCH_KEYWORDS = ("Data Engineer", "Data Analyst", "AI Engineer")
 API_START_PAGE = 1
 API_REQUEST_PAGE_SIZE = 50
 

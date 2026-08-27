@@ -63,9 +63,10 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://job_market:job_market@postgres:5432/job_market
       PUSHGATEWAY_URL: http://pushgateway:9091
-      JOB_API_BASE_URL: http://job-api-mock:8010/jobboerse/jobsuche-service
+      #JOB_API_BASE_URL: http://job-api-mock:8010/jobboerse/jobsuche-service
     volumes:
       - job-market-data:/app/data
+      - ./data/samples:/app/data/samples:ro
     command:
       ["python", "-m", "src.data.etl.etl"]
 

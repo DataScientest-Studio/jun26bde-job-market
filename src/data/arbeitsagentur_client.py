@@ -12,7 +12,7 @@ from src.monitoring.metrics import monitor_arbeitsagentur_request
 class ArbeitsagenturClient:
     """Small client for searching Arbeitsagentur job advertisements."""
 
-    DEFAULT_BASE_URL = "https://rest.arbeitsagentur.de/" "jobboerse/jobsuche-service"
+    DEFAULT_BASE_URL = "https://rest.arbeitsagentur.de/jobboerse/jobsuche-service"
 
     API_KEY = "jobboerse-jobsuche"
 
