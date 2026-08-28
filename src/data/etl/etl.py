@@ -43,18 +43,11 @@ def _run_simulation() -> None:
                     DROP TABLE IF EXISTS jobs;
                 """))
 
-
-    for sample_number, seen_reference_numbers in enumerate(
-        simulated_seen_reference_numbers,
-        start=1,
-    ):
+    for sample_number in range(1, 4):
         raw_path = Path("data/samples") / f"job-details-{sample_number}.json"
         job_details = load_json(raw_path)
 
-        seen_reference_numbers = {
-            job["referenznummer"]
-            for job in job_details
-        }
+        seen_reference_numbers = {job["referenznummer"] for job in job_details}
 
         clean_path = transform_data(raw_path)
         load_data(clean_path)
