@@ -99,7 +99,8 @@ SELECT
     last_seen,
     is_active,
     reappearance_count,
-    modification_count
+    modification_count,
+    unchanged_republish_count
 FROM jobs
 WHERE reference_number = :reference_number
 """)
@@ -179,6 +180,7 @@ class JobDetailModel(JobModel):
     is_active: bool
     reappearance_count: int
     modification_count: int
+    unchanged_republish_count: int
     # "Field(default_factory=list)" ensures that the default value is a new empty list for EACH instance
     locations: list[JobLocationModel] = Field(default_factory=list)
 

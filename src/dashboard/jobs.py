@@ -123,20 +123,18 @@ def create_job_details_modal_content(job: dict) -> list:
             )
         )
 
-    modification_count = job.get("modification_count", 0)
-    reappearance_count = job.get("reappearance_count", 0)
-
     content.append(
         html.Div(
             [
                 html.H3("Freshness"),
-                html.P(f"First seen: {_format_datetime(job.get('first_seen'))}"),
-                html.P(f"Last seen: {_format_datetime(job.get('last_seen'))}"),
-                html.P(f"Last modified: {_format_datetime(job.get('modified_at'))}"),
-                html.P(f"Observed changes: {modification_count}"),
                 html.P(
-                    f"Reappeared: {reappearance_count} "
-                    f"{'time' if reappearance_count == 1 else 'times'}"
+                    f"First published: "
+                    f"{_format_datetime(job.get('first_publication_date'))}"
+                ),
+                html.P(f"Last updated: " f"{_format_datetime(job.get('modified_at'))}"),
+                html.P(
+                    f"Republished without changes since last update: "
+                    f"{job.get("unchanged_republish_count", 0)}"
                 ),
             ],
             className="job-freshness",

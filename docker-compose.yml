@@ -58,12 +58,9 @@ services:
         condition: service_healthy
       pushgateway:
         condition: service_started
-      job-api-mock:
-        condition: service_started
     environment:
       DATABASE_URL: postgresql+psycopg://job_market:job_market@postgres:5432/job_market
       PUSHGATEWAY_URL: http://pushgateway:9091
-      #JOB_API_BASE_URL: http://job-api-mock:8010/jobboerse/jobsuche-service
     volumes:
       - job-market-data:/app/data
       - ./data/samples:/app/data/samples:ro
@@ -131,20 +128,6 @@ services:
     depends_on:
       - prometheus
     restart: unless-stopped
-
-  job-api-mock:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    ports:
-      - "127.0.0.1:8010:8010"
-    command:
-      [
-        "python", "-m", "uvicorn",
-        "src.job_api_mock.app:api",
-        "--host", "0.0.0.0",
-        "--port", "8010"
-      ]
 
 volumes:
   postgres_data:

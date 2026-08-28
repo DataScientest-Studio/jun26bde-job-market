@@ -51,7 +51,12 @@ def _run_simulation() -> None:
 
         clean_path = transform_data(raw_path)
         load_data(clean_path)
-        update_job_freshness(seen_reference_numbers)
+        update_job_freshness(
+            seen_reference_numbers,
+            does_job_exist_func=lambda reference_number: (
+                reference_number in seen_reference_numbers
+            ),
+        )
 
 
 @monitor_etl_run

@@ -2,9 +2,11 @@ import logging
 
 import requests
 from sqlalchemy import text
+from collections.abc import Callable
 
 from src.data.arbeitsagentur_client import ArbeitsagenturClient
 from src.data.database import get_database_connection
+
 
 from datetime import datetime
 
@@ -81,8 +83,10 @@ def get_job_states() -> dict[str, tuple[datetime | None, bool]]:
 
 def update_job_freshness(
     seen_reference_numbers: set[str],
+    does_job_exist_func: Callable[[str], bool] | None = None,
 ) -> None:
-    client = ArbeitsagenturClient()
+    if does_job_exist_func is None:
+        does_job_exist_func = ArbeitsagenturClient().does_job_exist
 
     # The search result itself confirms that these jobs exist.
     if seen_reference_numbers:
@@ -107,7 +111,7 @@ def update_job_freshness(
 
     for reference_number in missing_reference_numbers:
         try:
-            does_exist = client.does_job_exist(reference_number)
+            does_job_exist = does_job_exist_func(reference_number)
         except requests.RequestException as error:
             logger.warning(
                 "Could not verify job %s: %s",
@@ -116,7 +120,7 @@ def update_job_freshness(
             )
             continue
 
-        if does_exist:
+        if does_job_exist:
             with get_database_connection() as connection:
                 with connection.begin():
                     connection.execute(

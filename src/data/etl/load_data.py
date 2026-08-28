@@ -47,7 +47,9 @@ CREATE TABLE IF NOT EXISTS jobs (
     -- last_seen := most recent time our system confirmed it existed
     last_seen TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     -- is_active := most recent existence state
-    is_active BOOLEAN NOT NULL DEFAULT TRUE
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    -- unchanged_republish_count := how often the job was republished without changes since last update
+    unchanged_republish_count INTEGER NOT NULL DEFAULT 0
 );
 """)
 
@@ -171,6 +173,15 @@ ON CONFLICT(reference_number) DO UPDATE SET
             THEN jobs.reappearance_count + 1
             ELSE jobs.reappearance_count
         END,
+    unchanged_republish_count =
+    CASE
+        -- A real modification resets the streak of unchanged publications.
+        WHEN jobs.modified_at IS DISTINCT FROM EXCLUDED.modified_at THEN 0
+        -- Publication date moved, but the job was not modified.
+        WHEN jobs.publication_date IS DISTINCT FROM EXCLUDED.publication_date THEN jobs.unchanged_republish_count + 1
+        -- Nothing relevant changed.
+        ELSE jobs.unchanged_republish_count
+    END,
     last_seen = CURRENT_TIMESTAMP,
     is_active = TRUE
 """)
