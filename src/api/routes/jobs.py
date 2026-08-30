@@ -265,7 +265,7 @@ def _get_jobs_by_reference_numbers(
     response_model=list[JobModel],
     responses={
         503: {
-            "description": "The job database is unavailable",
+            "description": "The job database or search service is unavailable",
         }
     },
 )
