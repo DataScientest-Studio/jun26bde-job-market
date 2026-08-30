@@ -9,6 +9,7 @@ from src.data.etl.extract_data import extract_data
 from src.data.etl.transform_data import transform_data
 from src.data.etl.load_data import load_data
 from src.data.job_freshness import update_job_freshness
+from src.elasticsearch.elasticsearch import sync_jobs_index
 from src.monitoring.metrics import monitor_etl_run
 from src.data.utils.json_utils import load_json
 
@@ -75,6 +76,7 @@ def main() -> None:
     clean_path = transform_data(raw_path)
     load_data(clean_path)
     update_job_freshness(seen_reference_numbers)
+    sync_jobs_index()
 
 
 if __name__ == "__main__":

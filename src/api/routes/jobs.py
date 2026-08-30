@@ -11,6 +11,10 @@ import logging
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy import text
+from src.elasticsearch.elasticsearch import (
+    ElasticsearchUnavailableError,
+    search_job_reference_numbers,
+)
 
 from src.data.database import (
     DatabaseUnavailableError,
@@ -43,28 +47,36 @@ SELECT
     jobs.salary_max,
     jobs.salary_period,
     jobs.category,
-    (
-        SELECT city
-        FROM job_locations
-        WHERE job_locations.reference_number = jobs.reference_number
-        ORDER BY id
-        LIMIT 1
-    ) AS city,
-    (
-        SELECT latitude
-        FROM job_locations
-        WHERE job_locations.reference_number = jobs.reference_number
-        ORDER BY id
-        LIMIT 1
-    ) AS latitude,
-    (
-        SELECT longitude
-        FROM job_locations
-        WHERE job_locations.reference_number = jobs.reference_number
-        ORDER BY id
-        LIMIT 1
-    ) AS longitude
+    selected_location.city,
+    selected_location.latitude,
+    selected_location.longitude
 FROM jobs
+LEFT JOIN LATERAL (
+    SELECT
+        job_locations.city,
+        job_locations.latitude,
+        job_locations.longitude
+    FROM job_locations
+    WHERE job_locations.reference_number = jobs.reference_number
+    ORDER BY
+        CASE
+            WHEN LOWER(job_locations.city) = LOWER(CAST(:preferred_city AS TEXT))
+                AND job_locations.latitude IS NOT NULL
+                AND job_locations.longitude IS NOT NULL
+                THEN 0
+
+            WHEN LOWER(job_locations.city) = LOWER(CAST(:preferred_city AS TEXT))
+                THEN 1
+
+            WHEN job_locations.latitude IS NOT NULL
+                AND job_locations.longitude IS NOT NULL
+                THEN 2
+
+            ELSE 3
+        END,
+        job_locations.id
+    LIMIT 1
+) AS selected_location ON TRUE
 """
 
 # Retrieve all available details for one job.
@@ -188,6 +200,61 @@ class JobDetailModel(JobModel):
 # endregion
 
 
+# region Private helpers
+
+
+def _get_jobs_by_reference_numbers(
+    reference_numbers: list[str],
+    preferred_city: str | None = None,
+) -> list[dict]:
+    """Retrieve jobs from PostgreSQL while preserving Elasticsearch ranking."""
+
+    if not reference_numbers:
+        return []
+
+    parameters: dict[str, object] = {
+        "preferred_city": preferred_city,
+    }
+
+    parameters.update(
+        {
+            f"reference_{index}": reference_number
+            for index, reference_number in enumerate(reference_numbers)
+        }
+    )
+
+    placeholders = ", ".join(
+        f":reference_{index}" for index in range(len(reference_numbers))
+    )
+
+    ordering = " ".join(
+        f"WHEN :reference_{index} THEN {index}"
+        for index in range(len(reference_numbers))
+    )
+
+    # ORDER BY CASE preserves Elasticsearch's relevance ranking.
+    query = text(GET_ALL_JOBS_SQL + f"""
+        WHERE jobs.reference_number IN ({placeholders})
+        ORDER BY CASE jobs.reference_number
+            {ordering}
+        END
+        """)
+
+    with get_database_connection() as connection:
+        rows = (
+            connection.execute(
+                query,
+                parameters,
+            )
+            .mappings()
+            .all()
+        )
+
+    return [dict(row) for row in rows]
+
+
+# endregion
+
 # region API endpoints
 
 
@@ -202,12 +269,14 @@ class JobDetailModel(JobModel):
         }
     },
 )
-@monitor_job_search  # order is important
+@monitor_job_search  # order is important (@monitor_job_search should be close to the function)
 def get_jobs(
     keyword: str | None = Query(
         default=None,
-        description="Keyword contained in the job title or occupation",
-        examples=["Data Engineer"],
+        description=(
+            "Full-text search across job title, occupation, description, company, and category"
+        ),
+        examples=["Python Kubernetes"],
     ),
     limit: int = Query(
         default=20,
@@ -264,28 +333,49 @@ def get_jobs(
     ),
 ) -> list[JobModel]:
     """
-    Return jobs ordered by publication date, newest first.
+    Return active job advertisements.
 
-    Use `limit` and `offset` to paginate through the available jobs.
-    If the offset is beyond the available results, an empty list is returned.
+    Keyword searches use Elasticsearch and are ordered by relevance.
+    Without a keyword, jobs are ordered by publication date, newest first.
 
-    Optional query parameters can be used to filter the results by
-    - city,
-    - company name
-    - home-office availability.
+    Use `limit` and `offset` for pagination.
     """
 
     query_conditions = ["jobs.is_active = TRUE"]
-    query_parameters: dict[str, object] = {}
+    query_parameters: dict[str, object] = {
+        "preferred_city": city,
+    }
 
     if keyword is not None:
-        query_conditions.append("""
-            (
-                LOWER(title) LIKE LOWER(:keyword)
-                OR LOWER(occupation) LIKE LOWER(:keyword)
+        try:
+            reference_numbers = search_job_reference_numbers(
+                keyword,
+                limit=limit,
+                offset=offset,
+                city=city,
+                company=company,
+                home_office=home_office,
+                category=category,
             )
-            """)
-        query_parameters["keyword"] = f"%{keyword}%"
+
+            jobs = _get_jobs_by_reference_numbers(
+                reference_numbers,
+                preferred_city=city,
+            )
+        except ElasticsearchUnavailableError:
+            logger.exception("Could not search Elasticsearch")
+
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="The job search service is unavailable.",
+            )
+        except DatabaseUnavailableError:
+            logger.exception("Could not read the job database")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="The job database is unavailable.",
+            )
+        return [JobModel(**job) for job in jobs]
 
     if city is not None:
         query_conditions.append("""
@@ -309,7 +399,6 @@ def get_jobs(
     if category is not None:
         query_conditions.append("LOWER(category) = LOWER(:category)")
         query_parameters["category"] = category
-    
 
     query = GET_ALL_JOBS_SQL
 

@@ -8,6 +8,7 @@ from src.data.etl.extract_data import extract_data
 from src.data.etl.transform_data import transform_data
 from src.data.etl.load_data import load_data
 from src.data.job_freshness import update_job_freshness
+from src.elasticsearch.elasticsearch import sync_jobs_index
 
 
 @dag(
@@ -39,20 +40,25 @@ def job_market_etl():
     @task
     def update_freshness(
         seen_reference_numbers: list[str],
-        _: str,
-    ) -> None:
+        clean_path: str,
+    ) -> str:
         update_job_freshness(set(seen_reference_numbers))
+        return clean_path
+
+    @task
+    def update_elasticsearch(_: str) -> None:
+        sync_jobs_index()
 
     extracted_data = extract()
     clean_data = transform(extracted_data["raw_path"])
     loaded_data_path = load(clean_data)
-
-    update_freshness(
+    freshness_done = update_freshness(
         extracted_data["seen_reference_numbers"],
         loaded_data_path,
     )
+    update_elasticsearch(freshness_done)
 
-    # extract → transform → load → update job freshness
+    # extract → transform → load → update job freshness → sync Elasticsearch
 
 
 job_market_etl()
