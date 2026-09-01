@@ -2,7 +2,9 @@
 
 ![Find Jobs UI](docs/images/find-jobs-ui.png)
 
-![Statistics UI](docs/images/statistics-ui.png)
+![Statistics UI 1](docs/images/statistics-ui-1.png)
+
+![Statistics UI 2](docs/images/statistics-ui-2.png)
 
 ## Architecture
 
