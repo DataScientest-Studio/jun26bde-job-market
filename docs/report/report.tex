@@ -164,7 +164,7 @@ The project uses the job-search interface of the German Bundesagentur für Arbei
 
 The job-search endpoint returns paginated advertisement lists and supports parameters such as \texttt{was} for the search keyword, \texttt{wo} for an optional location, \texttt{page}, and \texttt{size}. Each result contains a reference number that uniquely identifies the advertisement and can be used to request its complete record through the detail endpoint. The detail response provides the primary input for transformation and includes information such as title, occupation, employer, description, employment conditions, salary, publication and modification dates, external links, and one or more job locations.
 
-A special case occurs when a previously observed advertisement is no longer available. If the detail endpoint returns HTTP 404 together with the source-specific code \texttt{STELLENANGEBOT\_NICHT\_GEFUNDEN}, this is interpreted as evidence that the advertisement no longer exists at the source. This distinction is important for job-freshness tracking because a confirmed disappearance must be distinguished from a temporary request failure.
+A special case occurs when a previously observed advertisement is no longer available. If the detail endpoint returns HTTP 404 together with the source-specific code \path{STELLENANGEBOT_NICHT_GEFUNDEN}, this is interpreted as evidence that the advertisement no longer exists at the source. This distinction is important for job-freshness tracking because a confirmed disappearance must be distinguished from a temporary request failure.
 
 
 \subsection{ETL Pipeline}
@@ -191,7 +191,7 @@ An extraction run can process several search keywords. For each keyword, the fir
 
 The same advertisement may occur in the result sets of several search terms. Reference numbers are therefore deduplicated across all keywords within an extraction run to avoid unnecessary processing. Malformed result entries and advertisements without a valid reference number are skipped. The resulting set of unique references represents the jobs observed during the current search and is also retained for the subsequent job-freshness update.
 
-Full job details are retrieved using the unique reference numbers obtained from the search results. To reduce unnecessary API requests, an existing advertisement is not automatically downloaded again on every run. The extraction code compares the source modification timestamp, \texttt{aenderungsdatum}, with the timestamp already stored for that job. Detail retrieval is required for new advertisements, advertisements whose modification timestamp has changed, and cases in which the timestamps are missing or cannot be compared reliably. Unchanged advertisements can therefore remain in PostgreSQL without repeatedly downloading and processing identical detail records.
+Full job details are retrieved using the unique reference numbers obtained from the search results. To reduce unnecessary API requests, an existing advertisement is not automatically downloaded again on every run. The extraction code compares the source modification timestamp, \path{aenderungsdatum}, with the timestamp already stored for that job. Detail retrieval is required for new advertisements, advertisements whose modification timestamp has changed, and cases in which the timestamps are missing or cannot be compared reliably. Unchanged advertisements can therefore remain in PostgreSQL without repeatedly downloading and processing identical detail records.
 
 A failure to retrieve an individual detail record does not abort the complete extraction. Successful responses are collected in \path{job-details.json}, while failed requests are written separately to \path{job-detail-failures.json} together with the affected reference number and error message. The remaining advertisements can therefore continue through the pipeline, while failed requests remain traceable for diagnosis.
 
@@ -202,11 +202,11 @@ Each extraction run receives its own UTC-timestamped directory under \path{data/
 
 The transformation stage converts the source-specific JSON representation returned by the Bundesagentur für Arbeit into the internal schema used by the remainder of the application. As shown in Figure~\ref{fig:ingestion-pipeline}, it is positioned between the raw JSON archive and PostgreSQL persistence and produces a cleaned and enriched intermediate dataset.
 
-German field names from the source API are mapped to consistent English names, for example \texttt{referenznummer} to \path{reference_number}, \texttt{stellenangebotsTitel} to \texttt{title}, and \texttt{firma} to \texttt{company}. The same principle is applied to employment conditions, salary information, dates, external links, and employer metadata. This isolates the rest of the application from the terminology and structure of the external API and provides a stable internal representation for persistence and consumption.
+German field names from the source API are mapped to consistent English names, for example \path{referenznummer} to \path{reference_number}, \path{stellenangebotsTitel} to \path{title}, and \path{firma} to \path{company}. The same principle is applied to employment conditions, salary information, dates, external links, and employer metadata. This isolates the rest of the application from the terminology and structure of the external API and provides a stable internal representation for persistence and consumption.
 
-Nested structures are normalised during the same process. The source field \texttt{stellenlokationen} may contain several job locations, which are converted into a list of location objects containing postal code, city, region, country, latitude, and longitude. Entry and publication periods are similarly reduced to the relevant start dates used by the internal model. The transformation is designed to tolerate incomplete or malformed source data: missing optional fields become null values, while malformed nested structures or individual location entries are ignored rather than causing the entire transformation to fail.
+Nested structures are normalised during the same process. The source field \path{stellenlokationen} may contain several job locations, which are converted into a list of location objects containing postal code, city, region, country, latitude, and longitude. Entry and publication periods are similarly reduced to the relevant start dates used by the internal model. The transformation is designed to tolerate incomplete or malformed source data: missing optional fields become null values, while malformed nested structures or individual location entries are ignored rather than causing the entire transformation to fail.
 
-After structural normalisation, only advertisements containing at least one location in \texttt{DEUTSCHLAND} are retained. Each job is assigned one of the project's standardised categories based on its title and occupation, and missing geographic coordinates are enriched by the location geocoder. Malformed locations encountered during geocoding are counted and reported by the transformation process.
+After structural normalisation, only advertisements containing at least one location in \path{DEUTSCHLAND} are retained. Each job is assigned one of the project's standardised categories based on its title and occupation, and missing geographic coordinates are enriched by the location geocoder. Malformed locations encountered during geocoding are counted and reported by the transformation process.
 
 The transformed records are written to \path{clean-jobs.json} under \path{data/processed/arbeitsagentur/<timestamp>/}, using the timestamp inherited from the corresponding extraction run. The archived source responses remain unchanged, preserving a clear distinction between immutable raw input and the cleaned data consumed by the loading stage.
 
@@ -214,7 +214,7 @@ The transformed records are written to \path{clean-jobs.json} under \path{data/p
 
 Job advertisements may already contain geographic coordinates for their locations. When both latitude and longitude are available from the source, these values are retained unchanged and the location is marked with \path{coordinates_source = "source"}. Only locations with missing coordinates are passed to the additional geocoding step shown in Figure~\ref{fig:ingestion-pipeline}.
 
-Missing coordinates are resolved using the Nominatim geocoding service (\cite{nominatim-api}) through the \texttt{geopy} library. A query is constructed from the available postal code, city, and country fields. Successful results are stored with \path{coordinates_source = "geocoded"}, while unsuccessful lookups leave the coordinates empty and mark the source as \texttt{"missing"}. Requests are passed through \texttt{geopy}'s \texttt{RateLimiter} to comply with the Nominatim usage policy \cite{nominatim-policy}; the default configuration enforces a one-second delay between requests and retries temporary failures.
+Missing coordinates are resolved using the Nominatim geocoding service (\cite{nominatim-api}) through the \path{geopy} library. A query is constructed from the available postal code, city, and country fields. Successful results are stored with \path{coordinates_source = "geocoded"}, while unsuccessful lookups leave the coordinates empty and mark the source as \path{"missing"}. Requests are passed through \texttt{geopy}'s \texttt{RateLimiter} to comply with the Nominatim usage policy \cite{nominatim-policy}; the default configuration enforces a one-second delay between requests and retries temporary failures.
 
 To avoid repeated external requests, the geocoder maintains an in-memory cache indexed by the normalised location query. Both successful and unsuccessful lookups are cached, so multiple advertisements referring to the same postal code, city, and country combination normally require only one Nominatim request during an ETL run.
 
@@ -280,9 +280,9 @@ The job update and location replacement are performed within a database transact
 
 Elasticsearch is maintained as a derived search index rather than as an independent data store. PostgreSQL remains the authoritative source of job data, and the Elasticsearch index is rebuilt from the current database state after each scheduled ETL run. In the Airflow workflow, database loading and the job-freshness update are completed before Elasticsearch synchronisation, ensuring that the index reflects the latest active state of the advertisements.
 
-During synchronisation, all active jobs are selected from PostgreSQL together with the fields required for full-text search and filtering. Because one job may have several rows in the \texttt{job\_locations} table, their city values are aggregated into a single \texttt{cities} array. One Elasticsearch document therefore represents one job advertisement even when the relational record has multiple locations.
+During synchronisation, all active jobs are selected from PostgreSQL together with the fields required for full-text search and filtering. Because one job may have several rows in the \path{job_locations} table, their city values are aggregated into a single \path{cities} array. One Elasticsearch document therefore represents one job advertisement even when the relational record has multiple locations.
 
-The existing index is recreated and the selected jobs are inserted using the PostgreSQL \texttt{reference\_number} as the Elasticsearch document identifier. Only attributes required by the search functionality are copied. The resulting mapping is summarised in Table~\ref{tab:elasticsearch-mapping}.
+The existing index is recreated and the selected jobs are inserted using the PostgreSQL \path{reference_number} as the Elasticsearch document identifier. Only attributes required by the search functionality are copied. The resulting mapping is summarised in Table~\ref{tab:elasticsearch-mapping}.
 
 \begin{table}[htbp]
 	\centering
@@ -386,7 +386,7 @@ The same API is consumed by the Dash frontend, keeping filtering, pagination, se
 
 \subsection{Full-Text Search and Structured Filtering}
 
-The job-search endpoint distinguishes between free-text search and structured filtering. The API parameter \texttt{keyword} triggers relevance-oriented full-text search, while parameters such as \texttt{city}, \texttt{company}, \texttt{home\_office}, and \texttt{category} restrict the eligible result set. The API parameter \texttt{keyword} should not be confused with Elasticsearch's \texttt{keyword} field type.
+The job-search endpoint distinguishes between free-text search and structured filtering. The API parameter \path{keyword} triggers relevance-oriented full-text search, while parameters such as \path{city}, \path{company}, \path{home_office}, and \path{category} restrict the eligible result set. The API parameter \path{keyword} should not be confused with Elasticsearch's \path{keyword} field type.
 
 Figure~\ref{fig:elasticsearch-search} summarises the two search paths. Requests without a free-text keyword are handled entirely by PostgreSQL. When a keyword is supplied, Elasticsearch performs the full-text search and relevance ranking, after which FastAPI retrieves the corresponding job records from PostgreSQL while preserving that order.
 
@@ -400,7 +400,7 @@ Figure~\ref{fig:elasticsearch-search} summarises the two search paths. Requests 
 	\label{fig:elasticsearch-search}
 \end{figure}
 
-Keyword searches use an Elasticsearch \texttt{multi\_match} query across title, occupation, company, category, and description. These fields are weighted by expected relevance, with title receiving the highest boost and description the lowest, so matches in prominent job attributes contribute more strongly to the ranking.
+Keyword searches use an Elasticsearch \path{multi_match} query across title, occupation, company, category, and description. These fields are weighted by expected relevance, with title receiving the highest boost and description the lowest, so matches in prominent job attributes contribute more strongly to the ranking.
 
 Structured filters remain in PostgreSQL and can be combined with the ranked reference numbers returned by Elasticsearch. PostgreSQL therefore remains the authoritative source of job data, while Elasticsearch provides specialised full-text search and relevance ranking.
 
@@ -409,7 +409,7 @@ Structured filters remain in PostgreSQL and can be combined with the ranked refe
 
 In addition to individual job retrieval, the FastAPI backend exposes read-only statistical endpoints under the \path{/statistics} prefix. These endpoints perform SQL aggregations directly on PostgreSQL and provide the data consumed by the Statistics page of the Dash frontend.
 
-The available statistics include an overview of the dataset, the most frequently occurring companies and locations, home-office availability, job-category distribution, and monthly publication trends. Location statistics count distinct job advertisements rather than location rows because one advertisement may contain several locations. Home-office availability distinguishes between \texttt{possible}, \path{not_possible}, and \texttt{unknown}, preventing missing source information from being interpreted as a negative value.
+The available statistics include an overview of the dataset, the most frequently occurring companies and locations, home-office availability, job-category distribution, and monthly publication trends. Location statistics count distinct job advertisements rather than location rows because one advertisement may contain several locations. Home-office availability distinguishes between \path{possible}, \path{not_possible}, and \path{unknown}, preventing missing source information from being interpreted as a negative value.
 
 The publication-trends endpoint groups advertisements by the month of their \path{first_publication_date} and returns the resulting counts in chronological order. Figure~\ref{fig:swagger-trends} shows an example of this monthly aggregation.
 
@@ -485,11 +485,11 @@ The complete application is containerised with Docker and orchestrated through D
 	\label{fig:docker-deployment}
 \end{figure}
 
-The FastAPI backend, Dash frontend, and manual \texttt{data-update} service use the same Python application image but execute different commands at runtime. This avoids maintaining several nearly identical images and ensures that these components use the same application code and dependencies. Airflow uses a separate image based on the official Airflow distribution because it requires its own runtime and directory structure, while infrastructure components such as PostgreSQL, Prometheus, Pushgateway, Alertmanager, Grafana, and Elasticsearch use their respective standard images.
+The FastAPI backend, Dash frontend, and manual \path{data-update} service use the same Python application image but execute different commands at runtime. This avoids maintaining several nearly identical images and ensures that these components use the same application code and dependencies. Airflow uses a separate image based on the official Airflow distribution because it requires its own runtime and directory structure, while infrastructure components such as PostgreSQL, Prometheus, Pushgateway, Alertmanager, Grafana, and Elasticsearch use their respective standard images.
 
 Docker Compose connects the services through an internal network. FastAPI accesses PostgreSQL and Elasticsearch through their service names, while Dash communicates only with FastAPI and does not access the data stores directly. Service dependencies and health checks ensure that components such as the backend and ETL do not start before their required data services are available.
 
-Data ingestion can be executed through two paths. The \texttt{data-update} service provides an on-demand ETL environment, while Airflow executes the pipeline automatically according to its configured schedule. Both use the same ETL implementation and access the shared persistent data required by the pipeline.
+Data ingestion can be executed through two paths. The \path{data-update} service provides an on-demand ETL environment, while Airflow executes the pipeline automatically according to its configured schedule. Both use the same ETL implementation and access the shared persistent data required by the pipeline.
 
 Persistent state is stored in Docker volumes rather than inside the container filesystems, allowing PostgreSQL data, Elasticsearch data, archived ETL files, Prometheus time series, and Grafana state to survive container recreation. Monitoring configuration, alert rules, and dashboard definitions are kept as version-controlled files and mounted into the corresponding containers, separating persistent runtime state from reproducible configuration.
 
