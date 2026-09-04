@@ -466,6 +466,7 @@ The Statistics page additionally provides a time-series view based on each adver
 
 
 
+
 \section{Deployment and Automation}
 
 
@@ -511,7 +512,7 @@ The DAG is scheduled with the cron expression \texttt{0 6 * * *}, resulting in o
 
 \subsection{Monitoring Architecture}
 
-The project includes a monitoring stack for observing both the continuously running backend and the periodically executed ETL pipeline. The monitoring architecture is shown in Figure~\ref{fig:monitoring-architecture}. Metrics produced by the long-running FastAPI backend can be scraped directly, whereas the ETL process exists only for the duration of a scheduled run and therefore publishes its latest metrics through Pushgateway.
+The project monitors both the continuously running FastAPI backend and the periodically executed ETL pipeline. As shown in Figure~\ref{fig:monitoring-architecture}, backend metrics can be scraped directly by Prometheus, whereas the short-lived ETL process publishes its latest metrics through Pushgateway.
 
 \begin{figure}[htbp]
 	\centering
@@ -520,34 +521,28 @@ The project includes a monitoring stack for observing both the continuously runn
 	height=0.75\textheight,
 	keepaspectratio
 	]{monitoring.png}
-	\caption{Monitoring architecture using Prometheus, Pushgateway, Grafana, and Alertmanager, with Slack shown as an optional external notification channel. (The faded connection to Slack represents a possible notification integration rather than a currently configured project component.)}
+	\caption{Monitoring architecture using Prometheus, Pushgateway, Grafana, and Alertmanager. Slack represents an optional notification integration.}
 	\label{fig:monitoring-architecture}
 \end{figure}
 
-Application metrics are defined in \path{src/monitoring/metrics.py} using the Prometheus Python client. The backend records the number and outcome of job-search requests, their execution duration, and the number of database connections currently in use. Additional instrumentation records requests to the Bundesagentur für Arbeit API, including request duration, success or failure, and whether the most recent source request succeeded. FastAPI exposes these metrics through the \path{/metrics} endpoint, which is mounted directly into the application.
+The backend exposes Prometheus metrics for job-search activity and duration, database connections, and requests to the Bundesagentur für Arbeit API. ETL metrics include the duration and timestamp of the latest successful run as well as failed geocoding requests. Because the ETL process terminates after execution, these values are pushed to Pushgateway and subsequently collected by Prometheus.
 
-Prometheus acts as the central collection and time-series storage component. Its configuration scrapes the FastAPI backend and Pushgateway every 15 seconds and evaluates alerting rules once per minute. Direct scraping is appropriate for the backend because it is a continuously running service whose current metric state is always available. The collected time series can subsequently be queried using PromQL by dashboards and alerting rules.
+Grafana uses Prometheus as its datasource and visualises metrics from both monitoring paths, including request activity and latency, active database connections, ETL duration and freshness, and geocoding failures. Prometheus therefore provides metric collection and storage, while Grafana provides the visual monitoring layer.
 
-The ETL pipeline requires a different approach because it terminates after each scheduled execution. Metrics exposed only inside the ETL process would disappear before Prometheus could reliably scrape them. The ETL therefore uses a separate Prometheus registry and pushes the latest values to Pushgateway after a successful run. These values include \path{etl_runtime_seconds}, the timestamp of the last successful execution in \path{etl_last_success_unixtime}, and the number of failed geocoding requests in \path{failed_geocoding_requests}. Prometheus then scrapes Pushgateway in the same way as a persistent target.
+Prometheus also evaluates an alert for overdue ETL execution. The alert \path{ETLNotSuccessfulForTooLong} is triggered when the last successful run is more than 26 hours old for at least 30 minutes, allowing two hours of tolerance beyond the daily schedule. Alerts are forwarded to Alertmanager for routing. No external notification channel is currently configured, although services such as Slack could be connected as a production extension.
 
-Grafana provides the visual monitoring layer and uses Prometheus as its configured datasource. The provisioned Job Market dashboard displays operational information from both monitoring paths, including job-search request activity, the 95th-percentile search duration, active database connections, the duration of the latest ETL run, the time elapsed since the last successful ETL execution, and the number of geocoding failures. Grafana therefore does not collect metrics itself; it queries and visualises the time series stored by Prometheus.
-
-Alertmanager provides the final component of the monitoring path. Prometheus currently defines an alert named \texttt{ETLNotSuccessfulForTooLong}, which becomes eligible to fire when the recorded last successful ETL execution is more than 26 hours old and the condition remains true for 30 minutes. This threshold allows two hours of tolerance beyond the daily ETL schedule. Firing alerts are forwarded from Prometheus to Alertmanager, which is responsible for grouping and routing notifications. In the current project, Alertmanager is integrated into the monitoring stack, while an external notification channel is not configured. A typical production extension would connect an Alertmanager receiver to a collaboration service such as Slack through an incoming webhook, allowing operational alerts to be delivered automatically to a team channel.
+Because the ETL process terminates after each scheduled run, its latest metrics are pushed to Pushgateway, which keeps them available for Prometheus after the process has exited.
 
 
 \subsection{Collected Metrics}
 
-The monitoring instrumentation is implemented in \path{src/monitoring/metrics.py} and covers several parts of the application rather than only the FastAPI service. Metrics are grouped according to the external data source, database access, interactive job searches, and periodic ETL execution. This makes it possible to distinguish failures of the source API from problems in the application itself and to observe both continuously running and scheduled processes.
+The monitoring instrumentation covers the external data source, database activity, interactive job searches, and periodic ETL execution. Requests to the Bundesagentur für Arbeit are monitored for success, duration, and recent availability, allowing source-side problems to be distinguished from failures within the local application. Database activity is represented by the number of active PostgreSQL connections.
 
-Requests to the Bundesagentur für Arbeit are monitored through three related metrics. \path{arbeitsagentur_requests_total} counts successful and failed requests and distinguishes the API operation through labels, while \path{arbeitsagentur_request_duration_seconds} records their duration as a histogram. The gauge \path{arbeitsagentur_api_up} records whether the most recent monitored request succeeded. Together, these values provide an indication of source availability and allow slow external requests to be distinguished from delays introduced by the local application. These metrics are collected by Prometheus but are not included in the Grafana view shown below.
+Interactive job searches are monitored through request counts and execution-duration histograms. Grafana uses these values to display search activity and the 95th-percentile response duration, providing visibility into both workload and responsiveness.
 
-Database utilisation is represented by the \path{active_database_connections} gauge. The value is incremented when the application enters a monitored PostgreSQL connection and decremented when the connection is released. This provides a simple indication of concurrent database activity and can help relate increases in API traffic to pressure on the persistence layer.
+ETL monitoring records the duration and timestamp of the latest successful run together with the number of failed geocoding requests. Because these values describe the state of the latest completed execution, they are retained through Pushgateway after the ETL process terminates.
 
-Interactive use of the job API is monitored through \path{job_search_requests_total} and \path{job_search_duration_seconds}. The request counter distinguishes successful and failed searches, while the histogram records the execution time of each job search. In Grafana, the counter is converted into request activity over time, and the histogram buckets are used to calculate the 95th-percentile search duration. These metrics make it possible to observe both workload and responsiveness rather than relying only on a simple request count.
-
-Metrics for the periodic pipeline describe the outcome of the most recent ETL execution. \path{etl_runtime_seconds} stores its total duration, while \path{etl_last_success_unixtime} records the Unix timestamp of the latest successful run. Grafana derives the displayed \path{Time Since Last Successful ETL} value from this timestamp. The gauge \path{failed_geocoding_requests} stores the number of unsuccessful Nominatim lookups in the latest ETL run. Gauges are used for these ETL values because each scheduled process terminates after execution and the intention is to preserve the state of the latest run through Pushgateway rather than maintain process-local counters.
-
-Figure~\ref{fig:grafana-dashboard} shows the Grafana dashboard used to inspect the collected API, database, and ETL metrics.
+Figure~\ref{fig:grafana-dashboard} shows the Grafana dashboard used to inspect the collected application and ETL metrics.
 
 \begin{figure}[htbp]
 	\centering
@@ -560,32 +555,18 @@ Figure~\ref{fig:grafana-dashboard} shows the Grafana dashboard used to inspect t
 	\label{fig:grafana-dashboard}
 \end{figure}
 
-The upper panels report the freshness and duration of the latest ETL run and the number of geocoding failures. The time-series panels show job-search activity, the 95th-percentile search duration, and active database connections. In the test run captured in Figure~\ref{fig:grafana-dashboard}, the temporary increase in search traffic also produces visible database activity, illustrating how metrics from different components can be inspected together. The values represent one observed local test run and demonstrate that the metrics are collected and visualised; they should not be interpreted as a general performance benchmark.
-
-
-\subsection{Monitoring Periodic ETL Jobs}
-
-Monitoring a periodically executed ETL process differs from monitoring a continuously running web service. The FastAPI backend remains active and exposes its current metrics through the \path{/metrics} endpoint, allowing Prometheus to scrape it at regular intervals. An ETL process, in contrast, exists only for the duration of a scheduled execution and terminates after the pipeline has finished. If Prometheus attempted to scrape the process directly, it could easily miss the short period during which the metrics were available.
-
-Pushgateway is therefore used as an intermediary for ETL metrics. During an ETL run, the application records values such as the total execution time, the timestamp of the latest successful run, and the number of failed geocoding requests. After successful completion, these values are pushed to Pushgateway under the job name \path{job-market-etl}. Pushgateway remains continuously available after the ETL process has terminated, so Prometheus can retrieve the most recently published values during its normal scrape cycle.
-
-The ETL metrics are implemented as gauges in a dedicated Prometheus registry because they describe the state of the latest run rather than continuously increasing values. For example, \path{etl_runtime_seconds} is replaced by the duration of the newest execution, \path{etl_last_success_unixtime} is updated to the current time after a successful run, and \path{failed_geocoding_requests} is reset at the beginning of each execution before new failures are counted. This design allows Grafana and Prometheus alerting rules to inspect the latest ETL state even when no ETL process is currently running.
+The dashboard combines ETL freshness and duration with job-search activity, response latency, geocoding failures, and database connections. In the local test run shown in Figure~\ref{fig:grafana-dashboard}, increased search activity is accompanied by increased database activity, illustrating how metrics from different components can be inspected together. The values represent a demonstration run and should not be interpreted as a general performance benchmark.
 
 
 \subsection{Error Handling}
 
-Error handling is implemented at several layers so that failures of individual external services or records do not unnecessarily terminate the complete application. Requests to the Bundesagentur für Arbeit may fail because of network errors, timeouts, or unsuccessful HTTP responses. Such failures are logged by the extraction process. Where possible, processing continues with other search pages, keywords, or advertisements rather than discarding the complete extraction run.
+Error handling is designed to isolate failures where possible rather than terminate the complete pipeline or application. Failed source requests and malformed records are logged and skipped while unaffected advertisements continue to be processed. In particular, unsuccessful job-detail requests are recorded separately, and temporary failures during freshness checks do not cause previously active advertisements to be marked inactive.
 
-Job-detail retrieval is handled independently for each reference number. Successfully retrieved details are written to \path{job-details.json}, while advertisements whose detail request fails are recorded separately in \path{job-detail-failures.json} together with the corresponding reference number and error information. This preserves traceability of incomplete extraction runs while allowing successfully downloaded advertisements to proceed through transformation and loading. During freshness checks, a temporary request failure likewise does not cause a previously active job to be marked inactive; its state is left unchanged until its existence can be verified reliably.
+Infrastructure failures are exposed explicitly to application clients. If PostgreSQL is unavailable, the relevant FastAPI endpoints return HTTP~503, whereas requests for unknown job references return HTTP~404. The Dash frontend displays backend failures separately from valid empty search results, preventing technical problems from being presented as an absence of matching jobs.
 
-Database failures are translated into explicit application-level errors. The shared database layer raises a \texttt{DatabaseUnavailableError} when PostgreSQL cannot be accessed, and the relevant FastAPI job and statistics endpoints convert this condition into HTTP~503 \textit{Service Unavailable} responses. This distinguishes temporary infrastructure failure from cases such as an unknown job reference, for which the detail endpoint returns HTTP~404.
+Failures of optional enrichment services are also non-fatal: unsuccessful geocoding leaves locations without coordinates and is recorded through monitoring metrics. ETL success metrics are updated only after a successful pipeline run, so failed executions remain visible through the unchanged last-success timestamp and can trigger the corresponding Prometheus alert.
 
-The Dash frontend handles these API failures visibly rather than presenting them as empty results. If the job-list request cannot be completed, the result area displays the message \textit{``The job API is currently unavailable.''} and no job markers are shown on the map. If loading an individual job fails, the details dialog displays a corresponding error message. The user can therefore distinguish an actual search with no matching jobs from a technical failure of the backend or database.
 
-Location enrichment is designed to tolerate failures of the external Nominatim service. Geocoding requests are rate-limited and retried, and exceptions are swallowed after the configured retries so that one unresolved location does not stop the transformation of the remaining advertisements. Locations for which no coordinates can be obtained remain stored without coordinates, while unsuccessful lookups increment the \path{failed_geocoding_requests} metric.
-
-Finally, ETL failures are made observable through the monitoring design. The runtime and last-success metrics are updated only after a complete ETL execution returns successfully. Consequently, a failed run leaves the previous \path{etl_last_success_unixtime} unchanged, allowing Prometheus to detect that no successful update has occurred within the expected interval. The corresponding alert can then be forwarded to Alertmanager. Failure to publish metrics to Pushgateway is itself logged but does not invalidate an otherwise successful ETL run.
-	
 %	\subsection{Automated Tests and Continuous Integration}
 %	category-classification tests;
 %	short-keyword boundary test;
