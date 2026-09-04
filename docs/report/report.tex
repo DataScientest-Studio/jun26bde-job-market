@@ -96,7 +96,7 @@
 \end{titlepage}
 	
 \tableofcontents
-\listoffigures
+%\listoffigures
 \newpage
 
 
@@ -347,54 +347,48 @@ Most source-derived attributes are nullable because the API does not provide all
 
 \subsection{FastAPI Backend}
 
-FastAPI was selected as the service layer between PostgreSQL and the user-facing dashboard. The project specification requires an API through which the stored data can be queried, and FastAPI provides a lightweight Python framework that integrates naturally with the rest of the application. The backend is defined in \path{src/api/main.py}, while the individual routes are separated into modules for health checks, job access, and statistics under \path{src/api/routes/}. The application is served by Uvicorn on port 8000.
+FastAPI was selected as the service layer between PostgreSQL and the user-facing dashboard. It provides a lightweight Python framework that integrates naturally with the rest of the application and supports typed request and response contracts. Query parameters such as pagination values and optional job filters are validated automatically, while Pydantic response models provide a stable JSON representation independently of the underlying SQL query results.
 
-A central advantage of FastAPI is its support for typed API contracts. Request parameters are declared using Python type annotations and FastAPI's query-parameter definitions. This allows constraints to be expressed directly in the route signature; for example, the job-list endpoint restricts \texttt{limit} to values between 1 and 100 and requires a non-negative \texttt{offset}. Optional filters such as keyword, city, company, home-office availability, and category are also explicitly typed. Response structures are defined using Pydantic models such as \texttt{JobModel}, \texttt{JobLocationModel}, and \texttt{JobDetailModel}. These models distinguish required values from nullable source fields and provide a stable JSON contract independently of the internal SQL query results.
+The same type information is used to generate the OpenAPI specification and interactive Swagger documentation. When the backend is running, the available endpoints can therefore be inspected and tested directly through \path{http://127.0.0.1:8000/docs}, which was useful for verifying API behaviour independently of the Dash frontend.
 
-The same type information is used for validation and documentation. FastAPI validates incoming path and query parameters before the route logic is executed, while Pydantic validates the data used to construct response objects. Declared response models also ensure that the structure exposed through the API corresponds to the intended public representation rather than to arbitrary database rows. Parameter descriptions, examples, response schemas, and documented error responses are incorporated automatically into the generated OpenAPI specification.
-
-FastAPI consequently provides interactive Swagger documentation without requiring a separate documentation application. When the backend is running, the interface is available at \path{http://127.0.0.1:8000/docs}, where the available Health, Jobs, and Statistics endpoints can be inspected and tested directly. This was particularly useful during development because API parameters and responses could be verified independently of the Dash frontend.
-
-The API also establishes a clear boundary between data access and presentation. PostgreSQL is accessed by the backend through the shared database layer, whereas the Dash application does not query the database directly. Instead, the frontend sends HTTP requests to FastAPI and renders the returned JSON data. In the Docker Compose environment, this separation is reflected by the dedicated \texttt{backend} and \texttt{frontend} services, with the frontend configured to use \path{http://backend:8000}. As a result, database queries, filtering rules, validation, and statistical aggregation remain on the backend side, while Dash is responsible for user interaction and visualisation.
+The API also establishes a clear boundary between data access and presentation. PostgreSQL is accessed only through the backend, while the Dash frontend communicates with FastAPI through HTTP and renders the returned JSON data. Database queries, filtering, validation, and statistical aggregation therefore remain on the backend side, while Dash is responsible for user interaction and visualisation.
 
 
 \subsection{Job API}
 
-The main job-access endpoints are implemented in \path{src/api/routes/jobs.py}. The collection endpoint \path{/jobs} provides a compact representation of currently active advertisements, while \path{/jobs/{reference_number}} returns the complete stored representation of one advertisement together with all of its associated locations. The list representation contains the reference number, title, company, occupation, salary information, category, and a representative location with its coordinates; the detail representation additionally exposes the description, employment conditions, dates, external links, freshness information, and the complete list of locations.
+The job API provides two main endpoints. \path{/jobs} returns compact representations of currently active advertisements and supports filtering, full-text search, and pagination, while \path{/jobs/{reference_number}} returns the complete stored representation of a single advertisement together with all associated locations.
 
-The \path{/jobs} endpoint supports several optional search and filter parameters that can be combined within the same request. The \texttt{city} parameter restricts the result to jobs having a location whose city matches the supplied value case-insensitively, while \texttt{company} supports matching company names. The boolean \path{home_office} parameter filters according to the source field describing home-office availability, and \texttt{category} selects one of the standardised job categories introduced during transformation. The \texttt{keyword} parameter activates the full-text search path described in the following subsection. Only advertisements whose \path{is_active} state is true are returned by the list endpoint.
+The \path{/jobs} endpoint supports optional filters for city, company, home-office availability, and the standardised job category. Supplying a \texttt{keyword} activates the Elasticsearch full-text search described in the following subsection. Pagination is controlled through \texttt{limit} and \texttt{offset}; requests without a keyword are ordered by publication date, while keyword searches preserve the relevance ranking returned by Elasticsearch.
 
-Pagination is implemented through the \texttt{limit} and \texttt{offset} query parameters. The default page size is 20 jobs, values between 1 and 100 are accepted, and the default offset is zero. For requests without a full-text keyword, results are ordered by publication date in descending order and then by reference number, which provides deterministic ordering when several advertisements share the same publication date. Keyword searches instead preserve the relevance ordering produced by Elasticsearch, as described in the following subsection. If the offset exceeds the available result set, the endpoint returns an empty list rather than an error.
-
-Figure~\ref{fig:swagger-jobs} shows the collection endpoint in the automatically generated Swagger interface. The displayed controls correspond to the full-text search, structured filters, and pagination parameters described above and can be combined within a single request.
+Figure~\ref{fig:swagger-jobs} shows these parameters in the automatically generated Swagger interface.
 
 \begin{figure}[htbp]
 	\centering
-	\includegraphics[width=1\textwidth]{swagger-jobs.png}
-	\caption{Swagger interface for the \texttt{GET /jobs} endpoint, showing full-text search, structured filters, and pagination parameters.}
+	\includegraphics[width=\textwidth]{swagger-jobs.png}
+	\caption{Swagger interface for the \texttt{GET /jobs} endpoint with search, filter, and pagination parameters.}
 	\label{fig:swagger-jobs}
 \end{figure}
 
-The detail endpoint \path{/jobs/{reference_number}} uses the stable source reference number as a path parameter. It retrieves the main job row and all related rows from \path{job_locations}, combining them into a \texttt{JobDetailModel}. Unlike the list endpoint, the lookup is performed directly by reference number and does not restrict the result to currently active advertisements. An unknown reference number produces HTTP~404, while database-unavailability errors are exposed as HTTP~503 responses.
+The detail endpoint \path{/jobs/{reference_number}} uses the stable source reference number to retrieve the complete advertisement and all related locations. Unlike the list endpoint, it can also return advertisements that are no longer active. An unknown reference number produces HTTP~404.
 
-Figure~\ref{fig:swagger-job} illustrates a successful request to the detail endpoint. The reference number is supplied as a path parameter, and the returned HTTP~200 response contains the complete job representation.
+Figure~\ref{fig:swagger-job} illustrates a successful detail request and the returned HTTP~200 response.
 
 \begin{figure}[htbp]
 	\centering
-	\includegraphics[width=1\textwidth]{swagger-job.png}
-	\caption{Swagger interface for the \texttt{GET /jobs/\{reference\_number\}} endpoint, showing the path parameter and a successful detail response.}
+	\includegraphics[width=\textwidth]{swagger-job.png}
+	\caption{Swagger interface for the \texttt{GET /jobs/\{reference\_number\}} endpoint and a successful detail response.}
 	\label{fig:swagger-job}
 \end{figure}
 
-This API contract is also the interface consumed by the Dash frontend. Filtering, pagination, and database access therefore remain backend responsibilities, while the dashboard only submits the selected parameters and renders the returned results.
+Because an advertisement may contain several locations, the compact list response selects one representative location for display. When a city filter is supplied, a matching location is preferred; otherwise, a location with valid coordinates is selected where possible. The detail endpoint always returns the complete location list.
 
-Since a job advertisement may contain several locations, the compact job response selects a representative location for display. If a city filter is supplied, a matching location is preferred, with locations containing valid coordinates taking precedence. Without such a preference, a location with valid coordinates is selected where possible. The detailed job endpoint is unaffected by this simplification and returns all locations associated with the advertisement.
+The same API is consumed by the Dash frontend, keeping filtering, pagination, search, and database access in the backend while the dashboard remains responsible for presentation.
 
 \subsection{Full-Text Search and Structured Filtering}
 
-The job-search endpoint distinguishes between a free-text search criterion and structured filters. The API parameter \texttt{keyword} represents a relevance-oriented search, whereas parameters such as \texttt{city}, \texttt{company}, \texttt{home\_office}, and \texttt{category} restrict which advertisements are eligible for the result set. The API parameter name \texttt{keyword} should therefore not be confused with the Elasticsearch \texttt{keyword} field type described in the previous section.
+The job-search endpoint distinguishes between free-text search and structured filtering. The API parameter \texttt{keyword} triggers relevance-oriented full-text search, while parameters such as \texttt{city}, \texttt{company}, \texttt{home\_office}, and \texttt{category} restrict the eligible result set. The API parameter \texttt{keyword} should not be confused with Elasticsearch's \texttt{keyword} field type.
 
-Figure~\ref{fig:elasticsearch-search} summarises the two search paths implemented by the backend. Requests without a free-text keyword are handled entirely by PostgreSQL. When a keyword is supplied, Elasticsearch performs the full-text search and relevance ranking and returns the matching job reference numbers. FastAPI then retrieves the corresponding job records from PostgreSQL while preserving the Elasticsearch ranking.
+Figure~\ref{fig:elasticsearch-search} summarises the two search paths. Requests without a free-text keyword are handled entirely by PostgreSQL. When a keyword is supplied, Elasticsearch performs the full-text search and relevance ranking, after which FastAPI retrieves the corresponding job records from PostgreSQL while preserving that order.
 
 \begin{figure}[htbp]
 	\centering
@@ -406,38 +400,30 @@ Figure~\ref{fig:elasticsearch-search} summarises the two search paths implemente
 	\label{fig:elasticsearch-search}
 \end{figure}
 
-For keyword searches, Elasticsearch uses a \texttt{multi\_match} query across the title, occupation, company, category, and description fields. The fields are weighted according to their expected relevance: title receives the highest boost, followed by occupation, category, company, and description. This makes a match in the job title more influential than the same term occurring only in the description.
+Keyword searches use an Elasticsearch \texttt{multi\_match} query across title, occupation, company, category, and description. These fields are weighted by expected relevance, with title receiving the highest boost and description the lowest, so matches in prominent job attributes contribute more strongly to the ranking.
 
-Structured filters remain the responsibility of PostgreSQL. They can be applied together with the reference numbers returned by Elasticsearch, allowing full-text relevance ranking to be combined with constraints such as location, company, category, or home-office availability. PostgreSQL therefore remains the authoritative source of job data, while Elasticsearch acts as a specialised search index.
+Structured filters remain in PostgreSQL and can be combined with the ranked reference numbers returned by Elasticsearch. PostgreSQL therefore remains the authoritative source of job data, while Elasticsearch provides specialised full-text search and relevance ranking.
 
 
 \subsection{Statistics API}
 
-In addition to individual job retrieval, the FastAPI backend exposes a set of read-only statistical endpoints under the \path{/statistics} prefix. These endpoints perform SQL aggregations directly on PostgreSQL and provide the data consumed by the Statistics page of the Dash frontend.
+In addition to individual job retrieval, the FastAPI backend exposes read-only statistical endpoints under the \path{/statistics} prefix. These endpoints perform SQL aggregations directly on PostgreSQL and provide the data consumed by the Statistics page of the Dash frontend.
 
-The \path{/statistics/overview} endpoint returns a compact summary of the stored dataset. Its response contains the total number of jobs, the number of distinct companies, the number of distinct locations, and the earliest and latest publication dates available in the database. Distinct locations are determined from the combination of city, region, and country rather than from the number of rows in the location table.
+The available statistics include an overview of the dataset, the most frequently occurring companies and locations, home-office availability, job-category distribution, and monthly publication trends. Location statistics count distinct job advertisements rather than location rows because one advertisement may contain several locations. Home-office availability distinguishes between \texttt{possible}, \path{not_possible}, and \texttt{unknown}, preventing missing source information from being interpreted as a negative value.
 
-The \path{/statistics/companies} endpoint groups advertisements by company and returns the employers with the highest numbers of stored jobs. Companies with missing or empty names are excluded. The number of returned companies can be controlled using the \texttt{limit} parameter, which defaults to 20 and accepts values between 1 and 100. The dashboard currently requests the ten highest-ranked companies.
-
-Similarly, \path{/statistics/locations} aggregates the location table and returns cities ordered by the number of distinct associated job advertisements. Each response item contains the city, region, country, and job count. Counting distinct reference numbers is important because one advertisement may contain more than one location row. The endpoint also supports a configurable result limit and is used by the dashboard to display the most frequently occurring locations.
-
-The \path{/statistics/home-office} endpoint summarises the nullable \path{home_office_possible} field into three groups: \texttt{possible}, \path{not_possible}, and \texttt{unknown}. Treating null values separately avoids interpreting missing source information as a negative answer. The \path{/statistics/categories} endpoint groups all stored advertisements by the standardised category assigned during transformation and returns the corresponding job count for each category. These values are later visualised as the home-office and category distributions in Dash.
-
-The \path{/statistics/publication-trends} endpoint provides a temporal view of the stored advertisements. It groups jobs by the month of their \path{first_publication_date}, excludes records for which this date is unavailable, and returns the resulting months and job counts in chronological order. The Dash frontend uses these values to construct the publication-trend chart shown in the following subsection. Figure~\ref{fig:swagger-trends} illustrates this endpoint and an example of its returned monthly aggregation.
+The publication-trends endpoint groups advertisements by the month of their \path{first_publication_date} and returns the resulting counts in chronological order. Figure~\ref{fig:swagger-trends} shows an example of this monthly aggregation.
 
 \begin{figure}[htbp]
 	\centering
 	\includegraphics[width=0.95\textwidth]{swagger-trends.png}
-	\caption{Swagger interface for the
-		\texttt{GET /statistics/publication-trends} endpoint, showing the
-		monthly publication counts returned by the Statistics API.}
+	\caption{Swagger interface for the \texttt{GET /statistics/publication-trends} endpoint showing monthly publication counts.}
 	\label{fig:swagger-trends}
 \end{figure}
 
 
 \subsection{Dash Frontend}
 
-The Dash application provides the user-facing interface for exploring the collected job advertisements. It communicates exclusively with the FastAPI backend and does not access PostgreSQL directly. The main \textit{Find jobs} view combines search controls, a paginated result list, and an interactive geographic representation of the returned jobs, as shown in Figure~\ref{fig:job-search-interface}.
+The Dash application provides the user-facing interface for exploring the collected job advertisements. It communicates exclusively with the FastAPI backend and does not access PostgreSQL directly. The main \textit{Find jobs} view combines search controls, a paginated result list, and an interactive map, as shown in Figure~\ref{fig:job-search-interface}.
 
 \begin{figure}[!ht]
 	\centering
@@ -450,45 +436,33 @@ The Dash application provides the user-facing interface for exploring the collec
 	\label{fig:job-search-interface}
 \end{figure}
 
-The search panel at the top of Figure~\ref{fig:job-search-interface} provides four controls corresponding to the most frequently used API filters. The \textit{What} field accepts a job title or keyword, \textit{Where} supplies the location filter, \textit{Company} restricts results by employer, and the \textit{Category} dropdown selects one of the standardised categories introduced during transformation. Pressing the \textit{Search} button sends these values to the \path{/jobs} endpoint and resets the result pagination to the first page.
+The search controls correspond to the main filters exposed by the \path{/jobs} endpoint. Results are displayed as paginated cards and, where geographic coordinates are available, as category-coloured markers on the map. The list and map are therefore complementary representations of the same API response rather than independent data sources.
 
-Search results are displayed as individual cards in the left-hand column. Each card presents the job title and company and, when available, additional information such as city and salary. Only a limited number of results is displayed at once; the previous and next controls below the list modify the API offset and allow the user to move through the result pages. This keeps both the amount of data transferred from the backend and the number of elements rendered by the browser bounded.
+Detailed information is loaded only when requested. Selecting a result card or map marker triggers a request to \path{/jobs/{reference_number}} and opens a modal containing the complete advertisement, including its locations, description, publication and freshness information, and an external link when available.
 
-The map on the right-hand side visualises the same result page geographically using OpenStreetMap tiles and Plotly. Only advertisements for which geographic coordinates are available can be displayed as markers. Marker colours represent the standardised job categories, and the legend in the upper-right corner identifies the categories occurring in the currently displayed results. Hovering over a marker shows the job title, company, city, and category. The map and result list are therefore two complementary representations of the same API response rather than independent data sources.
-
-More detailed information is loaded only when requested. Selecting \textit{View details} on a result card, or clicking the corresponding marker on the map, opens a modal window and triggers a request to \path{/jobs/{reference_number}}. The modal can display the salary, all associated locations, the full job description, freshness information such as the first publication date and latest modification date, and the number of observed republications without changes. If the source advertisement provides an external URL, the modal also contains a link to the original job advertisement.
-
-A second main view, accessible through the \textit{Statistics} tab, presents aggregated information retrieved from the Statistics API. Summary cards show the numbers of jobs, companies, and locations together with the covered publication period. Plotly charts visualise publication trends over time, the companies and locations with the highest numbers of advertisements, the distribution of home-office information, and the distribution across the standardised job categories. The frontend therefore supports both the exploration of individual vacancies and a higher-level view of the collected job market.
-
-The frontend also handles backend failures explicitly. If a job-search request cannot be completed, for example because FastAPI cannot access PostgreSQL, the normal result list is replaced by the message \textit{``The job API is currently unavailable.''} and the map is shown without job markers. A failed request for an individual advertisement similarly opens the details dialog with an explanatory error message instead of leaving the interface in an undefined state. This provides a visible distinction between an empty search result and a technical failure of the data-access layer.
+The \textit{Statistics} view presents aggregated information retrieved from the Statistics API, including dataset totals, publication trends, leading companies and locations, home-office availability, and job-category distribution. The frontend also distinguishes technical backend failures from valid empty results by displaying an explicit error message when API requests cannot be completed.
 
 
 \subsection{Visual Analytics}
 
-The Statistics view complements the search-oriented interface by aggregating the collected advertisements into indicators that describe broader characteristics of the dataset. Instead of helping the user locate one particular vacancy, the visualisations are intended to answer questions such as which employers appear most frequently, where the collected jobs are concentrated, how often home-office availability is reported, which technical job categories dominate the dataset, and
-how the stored advertisements are distributed over publication time. 
+The Statistics view complements the search-oriented interface by aggregating the collected advertisements into broader indicators of employer activity, geographical concentration, home-office availability, job-category distribution, and publication trends.
 
-The company ranking identifies employers with the largest numbers of advertisements in the collected dataset. This can indicate which companies are particularly active within the job profiles covered by the configured search terms. The values should not, however, be interpreted as a complete ranking of German employers, since the dataset is limited by the selected source and search keywords. The chart is therefore most useful for comparing the relative presence of employers within the collected sample.
+The company and location rankings show which employers and cities are most strongly represented in the collected dataset. These values should not be interpreted as complete rankings of the German labour market, since they depend on the selected data source and configured search terms.
 
-The location ranking provides a similar perspective on geographical concentration. It counts distinct advertisements associated with each city, allowing users to identify labour-market centres represented strongly in the dataset. In the snapshot shown in Figure~\ref{fig:statistics-interface}, Berlin and München contain the largest numbers of collected jobs, followed by Hamburg, Frankfurt am Main, and Köln. The interactive map in the \textit{Find jobs} view complements this aggregate ranking by showing individual advertisements geographically and allowing their category and job details to be inspected.
+The home-office distribution distinguishes between advertisements that explicitly report home office as possible, not possible, or provide no corresponding information. Treating missing values as \textit{Unknown} avoids interpreting absent source information as a negative answer and also reveals the incompleteness of this attribute.
 
-The home-office chart distinguishes between advertisements for which home office is explicitly reported as possible, explicitly reported as not possible, and advertisements for which the source provides no value. This separation is important because missing information must not be interpreted as evidence that remote work is unavailable. In the snapshot shown in Figure~\ref{fig:statistics-interface}, 19.9\% of advertisements explicitly indicate that home office is possible, 36.6\% report it as not possible, and 43.5\% contain no corresponding information. The large \textit{Unknown} share therefore also reveals a limitation in the completeness of this source attribute.
+The category distribution provides a higher-level view of the technical job profiles represented in the dataset. Because heterogeneous job titles are mapped to the standardised categories described in Section~\ref{sec:job-classification}, differently worded positions can be compared within a common classification. A large \textit{Other} category also indicates the limitations of the rule-based classification and the breadth of advertisements returned by the configured search terms.
 
-The category distribution provides a higher-level view of the technical labour market represented by the collected advertisements. Because individual job titles are mapped to the broad categories introduced in Section~\ref{sec:job-classification}, differently worded positions can be compared within a common classification. In the current snapshot, \textit{Other} is the largest group, while Data Engineering is the largest of the explicitly defined technical categories. AI / Machine Learning and Data Analysis form the next largest groups, followed by Backend Development and Cloud / DevOps. The comparatively large \textit{Other} group also indicates that a substantial share of the collected advertisements does not match one of the more specific technical categories. These values reflect both the source advertisements and the search terms used during collection and should therefore be interpreted as characteristics of the collected dataset rather than as an unbiased estimate of the entire German job market.
+Figure~\ref{fig:statistics-interface} shows the location, home-office, and category views provided by the Dash Statistics page.
 
-Figure~\ref{fig:statistics-interface} shows these three complementary analytical views in the Dash Statistics page.
-
-\begin{figure}[htbp]
+\begin{figure}[!ht]
 	\centering
-	\includegraphics[width=0.96\textwidth]{statistics-ui.png}
-	\caption{Dash visual analytics showing the leading job locations,
-		reported home-office availability, and the distribution of
-		standardised job categories.}
+	\includegraphics[width=\textwidth]{statistics-ui.png}
+	\caption{Dash visual analytics showing leading job locations, reported home-office availability, and the distribution of standardised job categories.}
 	\label{fig:statistics-interface}
 \end{figure}
 
-The Statistics page additionally provides a time-series view of jobs by their first publication month. This visualisation makes it possible to inspect whether the advertisements currently stored in the database are concentrated in particular publication periods and to explore the data over selected three-month, six-month, one-year, or complete time ranges. Since the chart represents the first publication dates of jobs present in the collected dataset rather than a continuously observed historical census of the complete labour market, it is primarily useful for exploratory trend analysis.
-
+The Statistics page additionally provides a time-series view based on each advertisement's first publication month. It supports exploratory analysis over different time ranges, but should not be interpreted as a complete historical census because it reflects the publication dates of jobs contained in the collected dataset.
 
 
 
