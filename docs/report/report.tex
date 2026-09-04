@@ -469,22 +469,11 @@ The Statistics page additionally provides a time-series view based on each adver
 \section{Deployment and Automation}
 
 
-\subsection{Containerisation}
-
-Docker is used to provide an isolated and reproducible runtime environment for the project components. Rather than maintaining separate Python images for every application service, the backend, frontend, and manual data-update service are built from the same root \path{Dockerfile}. The image is based on \path{python:3.12-slim}, installs the common project dependencies, copies the source code into \path{/app}, and configures \path{/app} as the Python module path. This ensures that the three services execute the same application code and dependency versions while still performing different roles.
-
-The distinction between these services is introduced at runtime by Docker Compose through different commands and environment variables. The backend starts Uvicorn with the FastAPI application on port 8000, the frontend starts the Dash application on port 8050, and the \texttt{data-update} service executes the ETL module. Reusing the same application image avoids duplicating nearly identical Dockerfiles and reduces the risk that the API, dashboard, and ETL environments diverge from one another.
-
-Airflow uses a separate image defined by \path{airflow/Dockerfile}. It extends the official \path{apache/airflow:3.3.0} image, installs both the project and Airflow-specific dependencies, and copies the application source and DAG definitions into the Airflow environment. A separate image is appropriate here because Airflow requires its own runtime, command-line tools, web interface, scheduler components, and directory conventions.
-
-Infrastructure components do not require custom project images. PostgreSQL, Prometheus, Pushgateway, Alertmanager, and Grafana are instantiated directly from their respective official images. Persistent state is kept outside the container filesystems through Docker volumes: PostgreSQL data, archived ETL data, Prometheus time-series data, and Grafana state therefore survive container recreation. Containerisation consequently separates application execution from persistent data and makes the complete environment reproducible without installing the individual services directly on the host system.
-
-
 \subsection{Docker Compose Deployment}
 
-Docker Compose defines the runtime topology of the system and connects the individual containers through Docker's internal service network. Figure~\ref{fig:docker-deployment} shows the principal application and data-flow relationships. The same ETL implementation can be executed automatically by Airflow or manually through the \path{data-update} service.
+The complete application is containerised with Docker and orchestrated through Docker Compose. Figure~\ref{fig:docker-deployment} shows the principal services and their communication paths.
 
-\begin{figure}[htbp]
+\begin{figure}[!ht]
 	\centering
 	\includegraphics[
 	width=\textwidth,
@@ -495,37 +484,24 @@ Docker Compose defines the runtime topology of the system and connects the indiv
 	\label{fig:docker-deployment}
 \end{figure}
 
-The \texttt{postgres} service provides the authoritative relational data store and persists its database files in the \path{postgres_data} volume. A health check based on \path{pg_isready} prevents dependent application services from starting before the database is ready to accept connections.
+The FastAPI backend, Dash frontend, and manual \texttt{data-update} service use the same Python application image but execute different commands at runtime. This avoids maintaining several nearly identical images and ensures that these components use the same application code and dependencies. Airflow uses a separate image based on the official Airflow distribution because it requires its own runtime and directory structure, while infrastructure components such as PostgreSQL, Prometheus, Pushgateway, Alertmanager, Grafana, and Elasticsearch use their respective standard images.
 
-The \texttt{backend} service runs FastAPI and communicates with PostgreSQL through the internal Docker hostname \texttt{postgres}. The \texttt{frontend} service runs Dash and accesses the backend over HTTP using \path{http://backend:8000}; it does not connect directly to the database. Ports 8000 and 8050 expose the API and dashboard respectively to the host machine.
+Docker Compose connects the services through an internal network. FastAPI accesses PostgreSQL and Elasticsearch through their service names, while Dash communicates only with FastAPI and does not access the data stores directly. Service dependencies and health checks ensure that components such as the backend and ETL do not start before their required data services are available.
 
-Two execution paths are available for data ingestion. The \path{data-update} service provides an on-demand ETL environment and can be invoked manually when a new collection run is required. The \texttt{airflow} service provides the scheduled execution path: its DAG executes extraction, transformation, loading, and job-freshness updates automatically. Both services access PostgreSQL and share the \path{job-market-data} volume used for the archived and processed JSON files.
+Data ingestion can be executed through two paths. The \texttt{data-update} service provides an on-demand ETL environment, while Airflow executes the pipeline automatically according to its configured schedule. Both use the same ETL implementation and access the shared persistent data required by the pipeline.
 
-The remaining services provide observability. Prometheus collects application and ETL metrics, while Pushgateway acts as an intermediary for metrics produced by the periodically running ETL tasks, which cannot be scraped continuously like a long-running web service. Grafana uses Prometheus as its datasource to provide operational dashboards, and Alertmanager receives alerts generated from Prometheus alerting rules. These auxiliary monitoring connections are omitted from Figure~\ref{fig:docker-deployment} for readability and are described in more detail in the monitoring subsection.
-
-
-\subsection{Persistent Storage and Service Dependencies}
-
-Container filesystems are ephemeral by design, so data that must survive container recreation is stored in named Docker volumes. PostgreSQL uses the \path{postgres_data} volume for its database files, making the relational dataset independent of the lifecycle of the \path{postgres} container. The extraction and transformation pipeline uses the \path{job-market-data} volume mounted at \path{/app/data}; this volume is shared by the manual \path{data-update} service and Airflow so that both execution paths operate on the same archived raw data and processed JSON files.
-
-The monitoring services maintain their state in separate volumes. Prometheus stores its collected time-series data in \path{prometheus_data}, while Grafana uses \path{grafana_data} for its application state. In addition, Prometheus configuration, alert rules, Grafana datasource configuration, and dashboard definitions are mounted from version-controlled project files. This separates persistent runtime data from declarative configuration and allows the monitoring environment to be recreated consistently.
-
-Service startup dependencies are defined through Docker Compose. The PostgreSQL service includes a health check based on \path{pg_isready}. Both the FastAPI backend and the ETL-related services wait for PostgreSQL to reach the healthy state before starting, preventing database operations from being attempted while the server is still initialising. The \path{data-update} and \path{airflow} services additionally depend on Pushgateway being started because they can publish ETL metrics to it. The frontend depends on the backend, while Grafana depends on Prometheus. These latter dependencies establish startup ordering but do not perform the same readiness validation as the PostgreSQL health check.
-
-Where external browser access is required only from the development machine, ports are bound explicitly to the loopback interface. The FastAPI backend, Dash frontend, Airflow interface, Prometheus, Pushgateway, and Grafana are exposed through \path{127.0.0.1}, making them reachable from the host without publishing them on all network interfaces. PostgreSQL is currently exposed through port 5432 without this restriction, and Alertmanager is similarly published on port 9093. These bindings reflect the project's local development and demonstration environment rather than a hardened production network configuration.
+Persistent state is stored in Docker volumes rather than inside the container filesystems, allowing PostgreSQL data, Elasticsearch data, archived ETL files, Prometheus time series, and Grafana state to survive container recreation. Monitoring configuration, alert rules, and dashboard definitions are kept as version-controlled files and mounted into the corresponding containers, separating persistent runtime state from reproducible configuration.
 
 
 \subsection{ETL Orchestration with Airflow}
 
-Apache Airflow is used to automate the recurring execution of the ingestion pipeline. The DAG is defined in \path{airflow/dags/job_market_etl.py} and reuses the same extraction, transformation, loading, and freshness-tracking functions that can also be executed outside Airflow. Airflow therefore acts as the orchestration layer rather than implementing a separate ETL pipeline.
+Apache Airflow automates the recurring execution of the ingestion pipeline while reusing the same extraction, transformation, loading, freshness-tracking, and Elasticsearch synchronisation functions that can also be executed outside Airflow. It therefore acts as an orchestration layer rather than implementing a separate ETL pipeline.
 
-The workflow begins with the \texttt{extract} task, which calls the extraction logic using the configured default search keywords. It returns two outputs: the path of the timestamped raw-data directory and the set of reference numbers observed during the current search. The raw-data path is passed to the \texttt{transform} task, which creates the cleaned and enriched JSON representation. The resulting processed-data path is then passed to the \texttt{load} task, which persists the transformed advertisements and their locations in PostgreSQL.
+The DAG follows the dependency chain \\
+\texttt{extract} $\rightarrow$ \texttt{transform} $\rightarrow$ \texttt{load} $\rightarrow$ \texttt{update\_freshness} $\rightarrow$ \texttt{ update\_elasticsearch}. \\
+Extraction produces the raw-data directory and the set of job reference numbers observed during the current search. The transformed data is subsequently loaded into PostgreSQL before freshness information is updated, ensuring that advertisement state is not changed before the current dataset has been processed successfully. Finally, the Elasticsearch index is synchronised with the updated set of active jobs.
 
-After loading has completed, the \path{update_freshness} task compares the reference numbers observed during extraction with the jobs already stored in the database. This final step updates the observation state of advertisements and allows jobs that are no longer found during a complete collection run to be marked accordingly. Passing both the observed reference numbers and the completed load result to this task ensures that freshness information is not updated before the current dataset has been successfully processed.
-
-The resulting task dependency chain is therefore \path{extract $\rightarrow$ transform $\rightarrow$ load $\rightarrow$ update_freshness}. Airflow manages these dependencies explicitly and executes a downstream task only after its required upstream output is available. The DAG is scheduled with the cron expression \path{0 6 * * *}, causing one automated collection run every day at 06:00. The configuration \path{catchup=False} prevents Airflow from creating historical runs for scheduling intervals that were missed before the DAG became active or while the environment was offline.
-
-Airflow itself runs as a dedicated Docker Compose service. Its custom image is defined in \path{airflow/Dockerfile} and is based on the official \path{apache/airflow:3.3.0} image. The project dependencies, application source code, and DAG definitions are copied into this image so that the Airflow tasks can directly import the shared ETL modules. The service runs \path{airflow standalone}, connects to the same PostgreSQL database as the rest of the application, shares the \path{job-market-data} volume used for generated JSON files, and exposes its web interface on port 8080 for local inspection of DAG runs and task status.
+The DAG is scheduled with the cron expression \texttt{0 6 * * *}, resulting in one automated run every day at 06:00. The configuration \path{catchup=False} prevents Airflow from creating retrospective runs for previously missed scheduling intervals.
 
 
 
