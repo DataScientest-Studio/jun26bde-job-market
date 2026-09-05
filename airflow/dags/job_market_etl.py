@@ -7,6 +7,8 @@ from src.config.settings import DEFAULT_JOB_SEARCH_KEYWORDS
 from src.data.etl.extract_data import extract_data
 from src.data.etl.transform_data import transform_data
 from src.data.etl.load_data import load_data
+from src.data.job_freshness import update_job_freshness
+from src.elasticsearch.elasticsearch import sync_jobs_index
 
 
 @dag(
@@ -17,21 +19,46 @@ from src.data.etl.load_data import load_data
 )
 def job_market_etl():
 
-    @task
+    @task(multiple_outputs=True)
     def extract():
-        return str(extract_data(DEFAULT_JOB_SEARCH_KEYWORDS))
+        raw_path, seen_reference_numbers = extract_data(DEFAULT_JOB_SEARCH_KEYWORDS)
+
+        return {
+            "raw_path": str(raw_path),
+            "seen_reference_numbers": list(seen_reference_numbers),
+        }
 
     @task
     def transform(raw_path: str):
         return str(transform_data(Path(raw_path)))
 
     @task
-    def load(clean_path: str):
+    def load(clean_path: str) -> str:
         load_data(Path(clean_path))
+        return clean_path
 
-    raw = extract()
-    clean = transform(raw)
-    load(clean)
+    @task
+    def update_freshness(
+        seen_reference_numbers: list[str],
+        clean_path: str,
+    ) -> str:
+        update_job_freshness(set(seen_reference_numbers))
+        return clean_path
+
+    @task
+    def update_elasticsearch(_: str) -> None:
+        sync_jobs_index()
+
+    extracted_data = extract()
+    clean_data = transform(extracted_data["raw_path"])
+    loaded_data_path = load(clean_data)
+    freshness_done = update_freshness(
+        extracted_data["seen_reference_numbers"],
+        loaded_data_path,
+    )
+    update_elasticsearch(freshness_done)
+
+    # extract → transform → load → update job freshness → sync Elasticsearch
 
 
 job_market_etl()
