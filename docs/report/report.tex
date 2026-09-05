@@ -388,7 +388,7 @@ Figure~\ref{fig:swagger-job} illustrates a successful detail request and the ret
 	\label{fig:swagger-job}
 \end{figure}
 
-Because an advertisement may contain several locations, the compact list response selects one representative location for display. When a city filter is supplied, a matching location is preferred; otherwise, a location with valid coordinates is selected where possible. The detail endpoint always returns the complete location list.
+Although an advertisement may contain several locations, the \path{/jobs} endpoint returns only one location for each job. When a city filter is supplied, a location matching that city is selected, favouring one with coordinates where available. If no city filter is supplied, a location with available coordinates is selected where possible. The detail endpoint always returns the complete location list.
 
 This API is also consumed by the frontend, keeping filtering, pagination, search, and database access in the backend while the dashboard remains responsible for presentation.
 
