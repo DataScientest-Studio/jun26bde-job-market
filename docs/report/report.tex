@@ -3,8 +3,9 @@
 \documentclass[11pt,a4paper]{article}
  
 \usepackage[T1]{fontenc}
+\usepackage{lmodern} % makes 'fi' searchable in pdf
 \usepackage[a4paper,margin=2.5cm]{geometry}
-%\usepackage[a4paper,margin=4.5cm]{geometry} \pagestyle{empty}
+%\usepackage[a4paper,margin=4.5cm]{geometry} \pagestyle{empty} % only for proof reading
 \usepackage{xcolor}
 
 \usepackage{parskip}
@@ -29,7 +30,6 @@
 
 \usepackage{xurl}
 \usepackage[hidelinks, breaklinks=true]{hyperref}
-
 
 \newlist{tableitems}{itemize}{1}
 \setlist[tableitems]{
@@ -252,7 +252,7 @@ Short keywords require special handling because simple substring matching can pr
 The approach is intentionally lightweight and transparent, but depends entirely on the configured keywords and the wording of the title and occupation fields. Unrepresented synonyms or uncommon titles may therefore be assigned to \textit{Other}, while advertisements spanning several disciplines are reduced to a single category according to the fixed priority. The resulting categories are suitable for broad exploration and visualisation but should not be interpreted as a formal occupational classification.
 
 
-\subsubsection{Loading}
+\subsubsection{Loading \label{sec:loading}}
 
 The loading stage persists the cleaned records produced by the transformation stage into PostgreSQL and completes the ETL process shown in Figure~\ref{fig:ingestion-pipeline}.
 
@@ -284,7 +284,7 @@ After a job is inserted or updated, its stored locations are replaced by those i
 The job update and location replacement are performed within a database transaction: if part of the operation fails, the transaction is rolled back, preventing partially updated advertisements. Invalid records are logged and skipped while processing continues with the remaining jobs.
 
 
-\subsection{Elasticsearch Index Synchronisation}
+\subsection{Elasticsearch Index Synchronisation \label{subsec:elasticsearch-index-sync}}
 
 Elasticsearch is maintained as a derived search index rather than as an independent data store. PostgreSQL remains the authoritative source of job data, and the Elasticsearch index is rebuilt from the current database state after each scheduled ETL run. In the Airflow workflow, database loading and the job-freshness update are completed before Elasticsearch synchronisation, ensuring that the index reflects the latest active state of the advertisements.
 
@@ -394,9 +394,9 @@ This API is also consumed by the frontend, keeping filtering, pagination, search
 
 \subsection{Full-Text Search and Structured Filtering}
 
-The job-search endpoint distinguishes between free-text search and structured filtering. The API parameter \path{keyword} triggers relevance-oriented full-text search, while parameters such as \path{city}, \path{company}, \path{home_office}, and \path{category} restrict the eligible result set. The API parameter \path{keyword} should not be confused with Elasticsearch's \path{keyword} field type.
+The job-search endpoint distinguishes between free-text search and field-based filtering. The API parameter \path{keyword} contains the user's free-text search query and triggers a relevance-oriented Elasticsearch search, while parameters such as \path{city}, \path{company}, \path{home_office}, and \path{category} restrict the eligible result set. This parameter is unrelated to both the search terms used with the Bundesagentur für Arbeit API during data collection and Elasticsearch's \path{keyword} field type.
 
-Figure~\ref{fig:elasticsearch-search} summarises the two search paths. Requests without a free-text keyword are handled entirely by PostgreSQL. When a keyword is supplied, Elasticsearch performs the full-text search and relevance ranking, after which FastAPI retrieves the corresponding job records from PostgreSQL while preserving that order.
+Figure~\ref{fig:elasticsearch-search} presents the search process from two perspectives. The left side shows how requests are routed depending on whether a free-text keyword is supplied, while the right side shows the interaction between FastAPI, Elasticsearch, and PostgreSQL during a keyword search.
 
 \begin{figure}[htbp]
 	\centering
@@ -404,20 +404,22 @@ Figure~\ref{fig:elasticsearch-search} summarises the two search paths. Requests 
 	width=\textwidth,
 	keepaspectratio
 	]{elasticsearch.png}
-	\caption{Job-search routing and Elasticsearch-based full-text search with relevance ranking.}
+	\caption{Job-search processing. The left side shows the routing between PostgreSQL-based filtering and Elasticsearch-based full-text search; the right side shows the Elasticsearch search path, relevance ranking, and subsequent retrieval of job records from PostgreSQL.}
 	\label{fig:elasticsearch-search}
 \end{figure}
 
-Keyword searches use an Elasticsearch \path{multi_match} query across title, occupation, company, category, and description. These fields are weighted by expected relevance, with title receiving the highest boost and description the lowest, so matches in prominent job attributes contribute more strongly to the ranking.
+As shown on the left side of Figure~\ref{fig:elasticsearch-search}, requests without a keyword are handled entirely by PostgreSQL. The field-based filters are applied directly to the database, and the matching jobs are ordered by publication date. When a keyword is supplied, the filters are instead included in the Elasticsearch query together with the full-text search. Elasticsearch returns the matching reference numbers in relevance order, after which the corresponding job records are retrieved from PostgreSQL while preserving that order.
 
-Structured filters remain in PostgreSQL and can be combined with the ranked reference numbers returned by Elasticsearch. PostgreSQL therefore remains the authoritative source of job data, while Elasticsearch provides specialised full-text search and relevance ranking.
+The right side of Figure~\ref{fig:elasticsearch-search} shows this keyword-search path in more detail. Keyword searches use an Elasticsearch \path{multi_match} query across title, occupation, company, category, and description. These fields are weighted according to their expected relevance, with title receiving the highest boost and description the lowest; the corresponding relevance weights are listed in the figure. Matches in more heavily weighted fields therefore contribute more strongly to the ranking.
+
+As discussed in Section~\ref{subsec:elasticsearch-index-sync}, PostgreSQL remains the authoritative source of job data, while Elasticsearch provides specialised full-text search, filtering, and relevance ranking.
 
 
 \subsection{Statistics API}
 
 In addition to individual job retrieval, the FastAPI backend exposes read-only statistical endpoints under the \path{/statistics} prefix. These endpoints perform SQL aggregations directly on PostgreSQL and provide the data consumed by the Statistics page of the Dash frontend.
 
-The available statistics include an overview of the dataset, the most frequently occurring companies and locations, home-office availability, job-category distribution, and monthly publication trends. Location statistics count distinct job advertisements rather than location rows because one advertisement may contain several locations. Home-office availability distinguishes between \path{possible}, \path{not_possible}, and \path{unknown}, preventing missing source information from being interpreted as a negative value.
+The available statistics include an overview of the dataset, the most frequently occurring companies and locations, home-office availability, job-category distribution, and monthly publication trends. Location statistics are based on distinct job advertisements rather than on the number of stored location rows. Since one advertisement may be associated with several locations, counting the rows directly could count the same job more than once. Home-office availability distinguishes between \path{possible}, \path{not_possible}, and \path{unknown}, preventing missing source information from being interpreted as a negative value.
 
 The publication-trends endpoint groups advertisements by the month of their \path{first_publication_date} and returns the resulting counts in chronological order. Figure~\ref{fig:swagger-trends} shows an example of this monthly aggregation.
 
@@ -448,20 +450,12 @@ The search controls correspond to the main filters exposed by the \path{/jobs} e
 
 Detailed information is loaded only when requested. Selecting a result card or map marker triggers a request to \path{/jobs/{reference_number}} and opens a modal containing the complete advertisement, including its locations, description, publication and freshness information, and an external link when available.
 
-The \textit{Statistics} view presents aggregated information retrieved from the Statistics API, including dataset totals, publication trends, leading companies and locations, home-office availability, and job-category distribution. The frontend also distinguishes technical backend failures from valid empty results by displaying an explicit error message when API requests cannot be completed.
+The \textit{Statistics} view presents aggregated information retrieved from the Statistics API, including overview of the dataset, publication trends, leading companies and locations, home-office availability, and job-category distribution. The frontend also distinguishes technical backend failures from valid empty results by displaying an explicit error message when API requests cannot be completed.
 
 
 \subsection{Visual Analytics}
 
-The Statistics view complements the search-oriented interface by aggregating the collected advertisements into broader indicators of employer activity, geographical concentration, home-office availability, job-category distribution, and publication trends.
-
-The company and location rankings show which employers and cities are most strongly represented in the collected dataset. These values should not be interpreted as complete rankings of the German labour market, since they depend on the selected data source and configured search terms.
-
-The home-office distribution distinguishes between advertisements that explicitly report home office as possible, not possible, or provide no corresponding information. Treating missing values as \textit{Unknown} avoids interpreting absent source information as a negative answer and also reveals the incompleteness of this attribute.
-
-The category distribution provides a higher-level view of the technical job profiles represented in the dataset. Because heterogeneous job titles are mapped to the standardised categories described in Section~\ref{sec:job-classification}, differently worded positions can be compared within a common classification. A large \textit{Other} category also indicates the limitations of the rule-based classification and the breadth of advertisements returned by the configured search terms.
-
-Figure~\ref{fig:statistics-interface} shows the location, home-office, and category views provided by the Dash Statistics page.
+The Statistics view complements the search-oriented interface by aggregating the collected advertisements into broader indicators of employer activity, geographical concentration, home-office availability, job-category distribution, and publication trends. Figure~\ref{fig:statistics-interface} shows the location, home-office, and category views provided by the Dash Statistics page.
 
 \begin{figure}[!ht]
 	\centering
@@ -470,7 +464,13 @@ Figure~\ref{fig:statistics-interface} shows the location, home-office, and categ
 	\label{fig:statistics-interface}
 \end{figure}
 
-The Statistics page additionally provides a time-series view based on each advertisement's first publication month. It supports exploratory analysis over different time ranges, but should not be interpreted as a complete historical census because it reflects the publication dates of jobs contained in the collected dataset.
+The company and location rankings show which employers and cities are most strongly represented in the collected dataset. These values should not be interpreted as complete rankings of the German labour market, since they depend on the selected data source and configured search terms.
+
+The home-office distribution distinguishes between advertisements that explicitly report home office as possible, not possible, or provide no corresponding information. Treating missing values as \textit{Unknown} avoids interpreting absent source information as a negative answer and also reveals the incompleteness of this attribute.
+
+The category distribution provides a higher-level view of the technical job profiles represented in the dataset. Because job titles and occupation labels are mapped to the standardised categories described in Section~\ref{sec:job-classification}, advertisements with different wording can be grouped into the same category.
+
+The Statistics page additionally provides a time-series view based on each advertisement's first publication month. It supports exploratory analysis over different time ranges.
 
 
 
@@ -499,25 +499,30 @@ Docker Compose connects the services through an internal network. FastAPI access
 
 Data ingestion can be executed through two paths. The \path{data-update} service provides an on-demand ETL environment, while Airflow executes the pipeline automatically according to its configured schedule. Both use the same ETL implementation and access the shared persistent data required by the pipeline.
 
-Persistent state is stored in Docker volumes rather than inside the container filesystems, allowing PostgreSQL data, Elasticsearch data, archived ETL files, Prometheus time series, and Grafana state to survive container recreation. Monitoring configuration, alert rules, and dashboard definitions are kept as version-controlled files and mounted into the corresponding containers, separating persistent runtime state from reproducible configuration.
+Persistent state is stored in Docker volumes rather than inside the container filesystems, allowing PostgreSQL data, Elasticsearch data, archived ETL files, Prometheus time series, and Grafana state to survive container recreation. Monitoring configuration, alert rules, and dashboard definitions are stored as files in the project repository and mounted into the corresponding containers, separating persistent runtime state from reproducible configuration.
 
 
 \subsection{ETL Orchestration with Airflow}
 
-Apache Airflow automates the recurring execution of the ingestion pipeline while reusing the same extraction, transformation, loading, freshness-tracking, and Elasticsearch synchronisation functions that can also be executed outside Airflow. It therefore acts as an orchestration layer rather than implementing a separate ETL pipeline.
+Apache Airflow orchestrates the recurring ingestion pipeline by scheduling and sequencing the existing extraction, transformation, loading, freshness-tracking, and Elasticsearch synchronisation functions. The Airflow tasks act as thin wrappers around these functions, keeping orchestration separate from the ETL implementation. The DAG follows this dependency chain:
 
-The DAG follows the dependency chain \\
-\texttt{extract} $\rightarrow$ \texttt{transform} $\rightarrow$ \texttt{load} $\rightarrow$ \texttt{update\_freshness} $\rightarrow$ \texttt{ update\_elasticsearch}. \\
-Extraction produces the raw-data directory and the set of job reference numbers observed during the current search. The transformed data is subsequently loaded into PostgreSQL before freshness information is updated, ensuring that advertisement state is not changed before the current dataset has been processed successfully. Finally, the Elasticsearch index is synchronised with the updated set of active jobs.
+\[
+\begin{array}{rcl}
+	\texttt{start monitoring}
+	& \rightarrow & \texttt{extract} \rightarrow \texttt{transform} \rightarrow \texttt{load} \\
+	& \rightarrow & \texttt{update freshness} \rightarrow \texttt{update elasticsearch} \\
+	& \rightarrow & \texttt{publish metrics}
+\end{array}
+\]
 
-The DAG is scheduled with the cron expression \texttt{0 6 * * *}, resulting in one automated run every day at 06:00. The configuration \path{catchup=False} prevents Airflow from creating retrospective runs for previously missed scheduling intervals.
+The monitoring-specific first and final tasks are described in Section~\ref{sec:collected-metrics}. Extraction produces the raw-data directory and the set of job reference numbers observed during the current search. The transformed data is subsequently loaded into PostgreSQL before freshness information is updated, as described in Section~\ref{sec:loading}, ensuring that advertisement state is not changed before the current dataset has been processed successfully. Finally, the Elasticsearch index is synchronised with the updated set of active jobs, as discussed in Section~\ref{subsec:elasticsearch-index-sync}.
+
+The DAG is scheduled with the cron expression \texttt{0 6 * * *}, resulting in one automated run every day at 06:00. The configuration \path{catchup=False} ensures that Airflow does not try to execute all previously missed daily runs when the DAG is started or re-enabled.
 
 
 
 
 \section{Monitoring and Reliability}
-
-% TODO: Unsuccessful lookups are also recorded through the \path{failed_geocoding_requests} metric. The metric represents the number of failed geocoding requests in the current ETL run and is subsequently submitted to Prometheus through Pushgateway together with the other ETL metrics.
 
 
 \subsection{Monitoring Architecture}
@@ -539,20 +544,18 @@ The backend exposes Prometheus metrics for job-search activity and duration, dat
 
 Grafana uses Prometheus as its datasource and visualises metrics from both monitoring paths, including request activity and latency, active database connections, ETL duration and freshness, and geocoding failures. Prometheus therefore provides metric collection and storage, while Grafana provides the visual monitoring layer.
 
-Prometheus also evaluates an alert for overdue ETL execution. The alert \path{ETLNotSuccessfulForTooLong} is triggered when the last successful run is more than 26 hours old for at least 30 minutes, allowing two hours of tolerance beyond the daily schedule. Alerts are forwarded to Alertmanager for routing. No external notification channel is currently configured, although services such as Slack could be connected as a production extension.
-
-Because the ETL process terminates after each scheduled run, its latest metrics are pushed to Pushgateway, which keeps them available for Prometheus after the process has exited.
+Prometheus also evaluates an alert for overdue ETL execution. The alert is triggered when the last successful run is more than 26 hours old for at least 30 minutes, allowing two hours of tolerance beyond the daily schedule. Alerts are forwarded to Alertmanager for routing. No external notification channel is currently configured, although services such as Slack could be integrated with minimal additional configuration as a production extension.
 
 
-\subsection{Collected Metrics}
+\subsection{Collected Metrics \label{sec:collected-metrics}}
 
-The monitoring instrumentation covers the external data source, database activity, interactive job searches, and periodic ETL execution. Requests to the Bundesagentur für Arbeit are monitored for success, duration, and recent availability, allowing source-side problems to be distinguished from failures within the local application. Database activity is represented by the number of active PostgreSQL connections.
+The monitoring instrumentation covers both external dependencies and local application activity, including the Bundesagentur für Arbeit API, PostgreSQL access, job-search requests, and ETL execution. Requests to the Bundesagentur für Arbeit are monitored through request counts by operation and outcome and through request-duration histograms, while a separate gauge records whether the most recent request succeeded. PostgreSQL access in the backend is monitored by tracking the number of database connections concurrently in use.
 
-Interactive job searches are monitored through request counts and execution-duration histograms. Grafana uses these values to display search activity and the 95th-percentile response duration, providing visibility into both workload and responsiveness.
+Job-search requests are monitored through request counts and request-duration histograms. Grafana uses these metrics to display search activity and the 95th-percentile response duration, providing visibility into both request volume and API responsiveness.
 
-ETL monitoring records the duration and timestamp of the latest successful run together with the number of failed geocoding requests. Because these values describe the state of the latest completed execution, they are retained through Pushgateway after the ETL process terminates.
+ETL monitoring records the duration and timestamp of the latest successful run. The \path{failed_geocoding_requests} metric is reset before geocoding begins and incremented whenever a geocoding lookup fails, recording the number of unsuccessful lookups during that run.
 
-Figure~\ref{fig:grafana-dashboard} shows the Grafana dashboard used to inspect the collected application and ETL metrics.
+Figure~\ref{fig:grafana-dashboard} shows the Grafana dashboard used to inspect selected application and ETL metrics.
 
 \begin{figure}[htbp]
 	\centering
@@ -561,18 +564,18 @@ Figure~\ref{fig:grafana-dashboard} shows the Grafana dashboard used to inspect t
 	height=0.58\textheight,
 	keepaspectratio
 	]{grafana-screenshot.png}
-	\caption{Grafana dashboard displaying ETL status, geocoding failures, job-search activity, request duration, and active database connections.}
+	\caption{Grafana dashboard displaying ETL freshness and duration, geocoding failures, job-search activity and duration, and active database connections.}
 	\label{fig:grafana-dashboard}
 \end{figure}
 
-The dashboard combines ETL freshness and duration with job-search activity, response latency, geocoding failures, and database connections. In the local test run shown in Figure~\ref{fig:grafana-dashboard}, increased search activity is accompanied by increased database activity, illustrating how metrics from different components can be inspected together. The values represent a demonstration run and should not be interpreted as a general performance benchmark.
+The dashboard combines ETL freshness and duration with job-search activity and response duration, geocoding failures, and concurrent database usage. In the local test run shown in Figure~\ref{fig:grafana-dashboard}, the increase in job-search requests coincides with an increase in the number of database connections in use, illustrating how related metrics can be inspected together. The values were generated for demonstration purposes and should not be interpreted as a general performance benchmark.
 
 
 \subsection{Error Handling}
 
 Error handling is designed to isolate failures where possible rather than terminate the complete pipeline or application. Failed source requests and malformed records are logged and skipped while unaffected advertisements continue to be processed. In particular, unsuccessful job-detail requests are recorded separately, and temporary failures during freshness checks do not cause previously active advertisements to be marked inactive.
 
-Infrastructure failures are exposed explicitly to application clients. If PostgreSQL is unavailable, the relevant FastAPI endpoints return HTTP~503, whereas requests for unknown job references return HTTP~404. The Dash frontend displays backend failures separately from valid empty search results, preventing technical problems from being presented as an absence of matching jobs.
+Infrastructure failures are exposed explicitly to application clients. If PostgreSQL is unavailable, the relevant FastAPI endpoints return HTTP~503, whereas requests for unknown job references return HTTP~404. This distinction allows clients to differentiate service failures from valid requests that simply return no matching data.
 
 Failures of optional enrichment services are also non-fatal: unsuccessful geocoding leaves locations without coordinates and is recorded through monitoring metrics. ETL success metrics are updated only after a successful pipeline run, so failed executions remain visible through the unchanged last-success timestamp and can trigger the corresponding Prometheus alert.
 
@@ -592,11 +595,11 @@ Failures of optional enrichment services are also non-fatal: unsuccessful geocod
 
 \subsection{Achieved Results}
 
-The project delivers a functional end-to-end data-engineering system for collecting, processing, storing, and exploring German job advertisements. The pipeline retrieves advertisements from the Bundesagentur für Arbeit, preserves timestamped raw data, transforms and enriches the source records, and loads them into PostgreSQL. Repeated runs update existing advertisements without duplication while supporting freshness, modification, republication, and disappearance tracking.
+The project delivers a functional end-to-end data-engineering system for collecting, processing, storing, and exploring German job advertisements. The pipeline retrieves advertisements from the Bundesagentur für Arbeit, preserves timestamped raw data, transforms and enriches the source records, and loads them into PostgreSQL. Repeated runs update existing advertisements without duplication while preserving freshness information and distinguishing genuine modifications from unchanged republications.
 
-The processed data is exposed through FastAPI and consumed by a Dash frontend that supports job search, structured filtering, full-text search through Elasticsearch, geographic exploration, job details, and aggregated statistics. PostgreSQL remains the authoritative data store, while Elasticsearch provides a rebuildable search index for relevance-based queries.
+The processed data is exposed through FastAPI and consumed by a Dash frontend that supports job search, field-based filtering, full-text search, geographic exploration, job details, and aggregated statistics. Elasticsearch extends the application with relevance-based full-text search, while PostgreSQL provides the stored job records used by the API.
 
-The complete workflow can be executed automatically through Airflow and runs in a reproducible Docker Compose environment. Prometheus, Pushgateway, Grafana, and Alertmanager provide monitoring of both the application and periodic ETL process. Overall, the project demonstrates the integration of data acquisition, historisation, relational storage, search, API-based access, visual analytics, workflow orchestration, containerised deployment, and operational monitoring into a coherent data platform.
+The complete workflow can be executed automatically through Airflow and runs in a reproducible Docker Compose environment. Monitoring is provided for both the application and the periodic ETL process. Overall, the project integrates data acquisition, historisation, relational storage, search, API-based access, visual analytics, workflow orchestration, containerised deployment, and operational monitoring into a coherent data platform.
 
 
 \subsection{Technical Decisions}
@@ -605,16 +608,16 @@ The storage design deliberately separates source preservation from operational d
 
 The application separates data access from presentation through FastAPI. Dash communicates exclusively with the API rather than with PostgreSQL, keeping filtering, validation, statistics, and persistence logic in the backend. Dash was chosen because the project emphasises data engineering and analytical visualisation and therefore benefits from a Python-based frontend without the additional complexity of a separate JavaScript application.
 
-Elasticsearch complements rather than replaces PostgreSQL. It is used only for full-text search and relevance ranking, while PostgreSQL remains the authoritative data store and handles structured filtering and record retrieval. The Elasticsearch index is therefore treated as a rebuildable projection of the active database state, avoiding the consistency problems of maintaining two independent sources of truth.
+Elasticsearch complements rather than replaces PostgreSQL. It is used for full-text search and relevance ranking, while PostgreSQL remains the authoritative data store for persisted job data and record retrieval. The Elasticsearch index is therefore treated as a rebuildable projection of the active database state, avoiding the consistency problems of maintaining two independent sources of truth.
 
-Docker Compose provides a reproducible local multi-service environment, while Airflow orchestrates the dependent ETL stages and their daily execution. Prometheus, Pushgateway, Grafana, and Alertmanager provide operational visibility for both long-running services and the periodic ETL process. These tools introduce additional infrastructure, but they demonstrate orchestration and observability within the scope of the project without requiring the distributed deployment and scaling mechanisms of a production platform.
+Docker Compose was chosen to provide a reproducible multi-service environment without introducing the operational complexity of a distributed deployment platform. Airflow was added to express the dependencies and schedule of the recurring ETL workflow explicitly. Prometheus, Pushgateway, Grafana, and Alertmanager were used to cover both continuously running services and the short-lived ETL process, providing observability appropriate to the project scope without requiring production-scale infrastructure.
 
 
 \subsection{Limitations}
 
 The collected dataset does not represent the complete German labour market. The project uses the Bundesagentur für Arbeit as its only data source and regularly collects advertisements only for the configured search keywords. Jobs published exclusively elsewhere are therefore absent, and frequently missing attributes such as salary, home-office availability, or location information further limit some analyses. Statistical results should consequently be interpreted as characteristics of the collected sample rather than as exhaustive labour-market statistics.
 
-Temporal analysis is also limited by the observation period. Source publication dates do not constitute a complete historical census, while project-generated fields such as \path{first_seen}, \path{last_seen}, and reappearance counts accumulate only after the pipeline begins observing an advertisement. Reliable conclusions about long-term job lifetimes and republication patterns therefore require continuous operation over a longer period.
+Temporal analysis is also limited by the observation period. Source publication dates do not constitute a complete historical census, while project-generated freshness information accumulates only after the pipeline begins observing an advertisement. Reliable conclusions about long-term changes in the job market therefore require continuous operation over a longer period.
 
 Job classification relies on deterministic keyword rules applied to titles and occupations. Although transparent and reproducible, this approach cannot fully capture semantic context, uncommon terminology, or jobs spanning several disciplines. The resulting categories are therefore suitable for filtering and exploratory analysis but not as an authoritative occupational taxonomy.
 
@@ -629,15 +632,15 @@ Finally, the deployment is designed primarily for local demonstration and develo
 
 \subsection{Possible Improvements}
 
-Elasticsearch-based search could be improved through relevance evaluation against real usage data, German-language analysis, fuzzy matching, and autocomplete. As the dataset grows, the current full index rebuild could also be replaced by incremental updates or atomic replacement of a versioned index.
+Elasticsearch-based search could be improved through relevance evaluation against real usage data, German-language analysis, fuzzy matching\footnote{Fuzzy matching allows approximate text matches, for example matching a misspelled search term such as \textit{Enginer} with \textit{Engineer}.}, and autocomplete. As the dataset grows, the current full Elasticsearch index rebuild could also be replaced by incremental updates or atomic replacement of a versioned Elasticsearch index.
 
 The dataset could be broadened by integrating additional job-data sources, increasing market coverage and potentially enriching attributes such as salary and company information. This would require schema reconciliation, cross-source duplicate detection, and source-specific extraction logic.
 
-Job classification could be extended beyond deterministic keyword rules by incorporating job descriptions, linguistic preprocessing, semantic embeddings, or supervised classification. The existing rule-based approach would remain useful as a transparent baseline for evaluating more advanced methods.
+Job classification could be extended beyond deterministic keyword rules by incorporating job descriptions, linguistic preprocessing, semantic embeddings, or supervised classification\footnote{For this project, a supervised classifier could be trained on job advertisements with known category labels and then used to assign categories to new advertisements.}. The existing rule-based approach would remain useful as a transparent baseline for evaluating more advanced methods.
 
 Longer continuous operation would increase the analytical value of the publication and freshness data, enabling analysis of advertisement lifetimes, republication patterns, and changes in hiring activity over time.
 
-Automated testing should be expanded to cover more of the ETL pipeline, persistence layer, API, and failure scenarios. For deployment beyond a local demonstration environment, additional work would also be required in areas such as authentication, secret management, TLS, network security, and scalable hosting.
+Automated testing should be expanded to cover more of the ETL pipeline, persistence layer, API, and failure scenarios. For deployment beyond a local demonstration environment, additional work would also be required in areas such as authentication, secret management, TLS\footnote{TLS (Transport Layer Security) encrypts network communication and can authenticate communicating parties using digital certificates.}, network security, and scalable hosting.
 
 
 
