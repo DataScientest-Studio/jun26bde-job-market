@@ -125,7 +125,7 @@ The scope is deliberately centred on data engineering rather than machine learni
 
 \subsection{Our Approach}
 
-Figure~\ref{fig:project-overview} presents the overall architecture of the implemented system.
+Figure~\ref{fig:project-overview} presents the overall architecture of the implemented system. The system separates data ingestion from interactive data consumption. This separation allows the collection pipeline to operate independently of the user-facing application: job advertisements can be retrieved, transformed, enriched, and persisted without requiring the dashboard or API to be involved in the ingestion process.
 
 \begin{figure}[htbp]
 	\centering
@@ -133,8 +133,6 @@ Figure~\ref{fig:project-overview} presents the overall architecture of the imple
 	\caption{Overall architecture of the Job Market system.}
 	\label{fig:project-overview}
 \end{figure}
-
-The system separates data ingestion from interactive data consumption. This separation allows the collection pipeline to operate independently of the user-facing application: job advertisements can be retrieved, transformed, enriched, and persisted without requiring the dashboard or API to be involved in the ingestion process.
 
 The ingestion side is centred on a Python ETL pipeline that retrieves job advertisements from the Bundesagentur für Arbeit API (\cite{arbeitsagentur-api}). The extraction stage preserves the original JSON responses, while the transformation stage converts the source-specific representation into the internal job model, performs enrichment and classification, and prepares the records for persistence. PostgreSQL serves as the authoritative structured data store for the application. After the database has been updated and job freshness has been evaluated, the active advertisements are synchronised to Elasticsearch. The Elasticsearch index therefore represents a rebuildable, search-oriented projection of the PostgreSQL data rather than an independent source of truth.
 
@@ -409,7 +407,7 @@ Figure~\ref{fig:elasticsearch-search} presents the search process from two persp
 
 As shown on the left side of Figure~\ref{fig:elasticsearch-search}, requests without a keyword are handled entirely by PostgreSQL. The field-based filters are applied directly to the database, and the matching jobs are ordered by publication date. When a keyword is supplied, the filters are instead included in the Elasticsearch query together with the full-text search. Elasticsearch returns the matching reference numbers in relevance order, after which the corresponding job records are retrieved from PostgreSQL while preserving that order.
 
-The right side of Figure~\ref{fig:elasticsearch-search} shows this keyword-search path in more detail. Keyword searches use an Elasticsearch \path{multi_match} query across title, occupation, company, category, and description. These fields are weighted according to their expected relevance, with title receiving the highest boost and description the lowest; the corresponding relevance weights are listed in the figure. Matches in more heavily weighted fields therefore contribute more strongly to the ranking.
+The right side of Figure~\ref{fig:elasticsearch-search} shows this keyword-search path in more detail. Keyword searches use an Elasticsearch \path{multi_match} query across title, occupation, company, category, and description. The fields are weighted heuristically according to how directly they are expected to represent the user's search intent: the title receives the highest boost because it most directly identifies the advertised role, followed by occupation, whereas company and category provide broader or more indirect signals, and the description receives the lowest weight because it contains substantially more text and may include many incidental terms. As a result, matches in more heavily weighted fields contribute more strongly to the ranking. The corresponding relevance weights are also listed on the right side of the figure.
 
 As discussed in Section~\ref{subsec:elasticsearch-index-sync}, PostgreSQL remains the authoritative source of job data, while Elasticsearch provides specialised full-text search, filtering, and relevance ranking.
 
@@ -539,7 +537,7 @@ The project monitors both the continuously running FastAPI backend and the perio
 	\label{fig:monitoring-architecture}
 \end{figure}
 
-The backend exposes Prometheus metrics for job-search activity and duration, database connections, and requests to the Bundesagentur für Arbeit API. ETL metrics include the duration and timestamp of the latest successful run as well as failed geocoding requests. Because the ETL process terminates after execution, these values are pushed to Pushgateway and subsequently collected by Prometheus.
+The backend exposes Prometheus metrics for job-search activity and duration, database connections, and requests to the Bundesagentur für Arbeit API. ETL metrics include the duration and timestamp of the latest successful run as well as failed geocoding requests. Prometheus collects metrics from both monitoring paths and makes them available for querying and visualisation.
 
 Grafana uses Prometheus as its datasource and visualises metrics from both monitoring paths, including request activity and latency, active database connections, ETL duration and freshness, and geocoding failures. Prometheus therefore provides metric collection and storage, while Grafana provides the visual monitoring layer.
 
@@ -609,7 +607,7 @@ The application separates data access from presentation through FastAPI. Dash co
 
 Elasticsearch complements rather than replaces PostgreSQL. It is used for full-text search and relevance ranking, while PostgreSQL remains the authoritative data store for persisted job data and record retrieval. The Elasticsearch index is therefore treated as a rebuildable projection of the active database state, avoiding the consistency problems of maintaining two independent sources of truth.
 
-Docker Compose was chosen to provide a reproducible multi-service environment without introducing the operational complexity of a distributed deployment platform. Airflow was added to express the dependencies and schedule of the recurring ETL workflow explicitly. Prometheus, Pushgateway, Grafana, and Alertmanager were used to cover both continuously running services and the short-lived ETL process, providing observability appropriate to the project scope without requiring production-scale infrastructure.
+Docker Compose was chosen to provide a reproducible multi-service environment without introducing the operational complexity of a distributed deployment platform. Airflow was added to express the dependencies and schedule of the recurring ETL workflow explicitly. The monitoring stack was designed to cover both continuously running services and the short-lived ETL process, providing observability appropriate to the project scope without requiring production-scale infrastructure.
 
 
 \subsection{Limitations}

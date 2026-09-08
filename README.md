@@ -77,6 +77,8 @@ Run:
 
 You can replace these search terms or add more --keyword arguments. If no `--keyword` arguments are provided, the default search terms configured in `src/config/settings.py` are used.
 
+> **Note:** You can alternatively use `./docker_update_data.sh --simulate` to reset and populate the database with predefined sample data, for example if the Bundesagentur für Arbeit API is unavailable.
+
 ### Start the application with Docker
 
 Start the application:
