@@ -46,8 +46,7 @@ def main() -> None:
 
         with ThreadPoolExecutor(max_workers=workers) as executor:
             futures = [
-                executor.submit(generate_requests, stop_event)
-                for _ in range(workers)
+                executor.submit(generate_requests, stop_event) for _ in range(workers)
             ]
 
             time.sleep(PHASE_DURATION_SECONDS)

@@ -1,4 +1,4 @@
-# Run it with 
+# Run it with
 #   pytest src/tests/test_job_category_classifier.py
 import pytest
 
