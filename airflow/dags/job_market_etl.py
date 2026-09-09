@@ -21,6 +21,7 @@ from src.monitoring.metrics import (
     schedule="0 6 * * *",
     start_date=datetime(2026, 8, 1),
     catchup=False,
+    max_active_runs=1,
     tags=["job-market"],
 )
 def job_market_etl():

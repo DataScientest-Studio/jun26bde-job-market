@@ -162,8 +162,10 @@ def recreate_jobs_index() -> None:
     """Recreate the jobs index from its configured mapping."""
     client = _get_elasticsearch_client()
 
-    if client.indices.exists(index=ELASTICSEARCH_JOBS_INDEX):
-        client.indices.delete(index=ELASTICSEARCH_JOBS_INDEX)
+    client.indices.delete(
+        index=ELASTICSEARCH_JOBS_INDEX,
+        ignore_unavailable=True,
+    )
 
     client.indices.create(
         index=ELASTICSEARCH_JOBS_INDEX,
