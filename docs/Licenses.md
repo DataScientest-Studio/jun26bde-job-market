@@ -17,3 +17,8 @@
 - https://commons.wikimedia.org/wiki/File:Postgresql_elephant.svg
 - https://commons.wikimedia.org/wiki/File:Prometheus_software_logo.svg
 - https://commons.wikimedia.org/wiki/File:Grafana_logo.svg
+
+- https://uxwing.com/camera-icon/
+- https://uxwing.com/video-camera-icon/
+- https://uxwing.com/recycle-bin-icon/
+- https://uxwing.com/pencil-icon/
