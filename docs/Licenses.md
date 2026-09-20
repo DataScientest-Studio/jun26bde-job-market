@@ -24,3 +24,4 @@
 - https://uxwing.com/pencil-icon/
 - https://uxwing.com/red-x-icon/
 - https://uxwing.com/access-denied-icon/
+- https://uxwing.com/crown-color-icon/
