@@ -22,3 +22,5 @@
 - https://uxwing.com/video-camera-icon/
 - https://uxwing.com/recycle-bin-icon/
 - https://uxwing.com/pencil-icon/
+- https://uxwing.com/red-x-icon/
+- https://uxwing.com/access-denied-icon/
