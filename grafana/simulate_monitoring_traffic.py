@@ -1,3 +1,11 @@
+"""Generate artificial backend traffic for testing and demonstrating monitoring.
+
+Sends concurrent requests to the /jobs endpoint with varying load so that
+Prometheus metrics and Grafana dashboard panels can be tested with realistic
+request activity. This script is a development utility and is not part of the
+normal application runtime.
+"""
+
 from concurrent.futures import ThreadPoolExecutor
 import random
 import threading
